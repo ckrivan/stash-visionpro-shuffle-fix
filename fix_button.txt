@@ -1,0 +1,22 @@
+            // Streaming mode toggle button that uses our dedicated toggleStreamingMode function
+            Button(action: {
+                // Use Task to run the async toggle function
+                Task {
+                    await playerManager.toggleStreamingMode()
+                }
+            }) {
+                HStack(spacing: 6) {  // Slightly increased spacing
+                    // Use custom icons from Icons folder
+                    Group {
+                        if playerManager.useHLS || playerManager.wasForceHLS {
+                            // In HLS mode, show the direct2hls icon
+                            IconImage(name: "direct2hls", width: 30, height: 30, color: .yellow)
+                        } else {
+                            // In Direct mode, show a globe icon
+                            Image(systemName: "globe")
+                                .font(.system(size: 30))
+                                .foregroundStyle(Color.green)
+                        }
+                    }
+                    // Apply pulse effect when in fallback mode
+                    .symbolEffect(.pulse, options: .repeating, value: playerManager.isPerformingFallback)

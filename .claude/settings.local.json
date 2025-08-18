@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xcodebuild:*)",
+      "Bash(grep:*)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(swift:*)",
+      "Bash(sudo lsof:*)",
+      "Bash(route:*)",
+      "Bash(rm:*)",
+      "Bash(git add:*)",
+      "Bash(git reset:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(/mcp)",
+      "mcp__ref-tools__ref_search_documentation",
+      "WebSearch"
+    ],
+    "deny": []
+  }
+}
