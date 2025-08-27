@@ -191,37 +191,36 @@ private struct VideoPlayerUIView: UIViewRepresentable {
 
   func updateUIView(_ uiView: PlayerContainerView, context: Context) {
     if uiView.playerLayer?.player !== player {
-      // Setup player on the container view
-      Task { @MainActor in
-        uiView.setupPlayer(player)
-      }
+      // Setup player on the container view - only once!
       print("🎬 Setting up player layer")
       Task { @MainActor in
         uiView.setupPlayer(player)
         // Force playback to start
-        player.seek(to: .zero)
         player.play()
         player.playImmediately(atRate: 1.0)
 
+        /*
         // Add critical playback monitoring to detect complete failure
-        // This runs 5 seconds after setup and checks if playback has progressed
+        // This runs 10 seconds after setup and checks if playback has progressed
         Task {
-          try? await Task.sleep(nanoseconds: 5_000_000_000)  // 5 seconds
+          try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
           // Get the current time to check if playback is working
           let currentTime = player.currentTime().seconds
           // Check if player is playing
           let isPlaying = player.timeControlStatus == .playing
+          print("🔍 Player item status: \(player.currentItem?.status.rawValue ?? -1), error: \(player.currentItem?.error)")
 
           print(
-            "🔍 5-second playback check: time=\(currentTime), playing=\(isPlaying ? "yes" : "no")")
+            "🔍 10-second playback check: time=\(currentTime), playing=\(isPlaying ? "yes" : "no")")
 
-          // If we're not playing after 5 seconds, that's a critical failure
-          if !isPlaying && currentTime < 0.1 {
-            print("⚠️ CRITICAL: Video didn't start playing after 5 seconds")
+          // If we're not playing after 10 seconds, that's a critical failure
+          if !isPlaying {
+            print("⚠️ CRITICAL: Video didn't start playing after 10 seconds")
 
             // First check if we have video track issues (black screen with audio)
             if let playerItem = player.currentItem,
-              let tracks = playerItem.tracks as? [AVPlayerItemTrack] {
+              let tracks = playerItem.tracks as? [AVPlayerItemTrack]
+            {
               print("🎥 CRITICAL FAILURE - Checking video tracks:")
               var hasEnabledVideoTrack = false
 
@@ -254,6 +253,7 @@ private struct VideoPlayerUIView: UIViewRepresentable {
             )
           }
         }
+        */
       }
     }
   }
@@ -294,6 +294,9 @@ struct VideoPlayerView: View {
   @State private var currentWindowSize: CGSize = .zero
   @State private var isResizing = false
   @State private var resizeTimer: Timer?
+  
+
+  
 
   // Initialize with the provided scene
   init(scene: StashScene) {
@@ -323,7 +326,16 @@ struct VideoPlayerView: View {
                 showFeedback(message)
               }
             }
-            
+
+            // Allow external requests to reveal controls (e.g., black-screen timeout)
+            NotificationCenter.default.addObserver(
+              forName: NSNotification.Name("ShowControls"),
+              object: nil,
+              queue: .main
+            ) { _ in
+              withAnimation { showControls = true }
+            }
+
             // CRITICAL: Setup player when view first appears
             print("🎬 VideoPlayerView onAppear - setting up player for scene: \(scene.id)")
             Task {
@@ -339,17 +351,19 @@ struct VideoPlayerView: View {
           }
           // CRITICAL: React to scene changes - this is the fix for the black screen shuffle issue
           .onChange(of: appModel.currentScene?.id) { oldSceneId, newSceneId in
-            print("🎬 VideoPlayerView detected scene change from \(oldSceneId ?? "nil") to \(newSceneId ?? "nil")")
-            
+            print(
+              "🎬 VideoPlayerView detected scene change from \(oldSceneId ?? "nil") to \(newSceneId ?? "nil")"
+            )
+
             if let newId = newSceneId, newId != scene.id {
               print("🎬 Scene changed - reinitializing player for new scene: \(newId)")
-              
+
               // Update the local scene reference
               scene = appModel.currentScene ?? scene
-              
+
               // Reset player state
               playerInitialized = false
-              
+
               // Reinitialize player for new scene
               Task {
                 await setupPlayer()
@@ -547,165 +561,22 @@ struct VideoPlayerView: View {
       )
       // Add track status monitoring for black screen debugging
       .onAppear {
-        // Create a timer to check video track status periodically
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
-          guard let player = playerManager.player,
-            let playerItem = player.currentItem
-          else { return }
-          let tracks = playerItem.tracks
-
-          // Log all track statuses
-          print("🎥 VIDEO TRACK STATUS CHECK:")
-          var hasEnabledVideoTrack = false
-          var audioOnlyContent = true  // Assume audio-only until we find video tracks
-
-          // Using private struct to hold static state between timer invocations
-          struct BlackScreenState {
-            static var hasReportedBlackScreen = false
-            static var lastVideoTrackState: Bool?
-          }
-
-          for (index, track) in tracks.enumerated() {
-            let assetTrack = track.assetTrack
-            let isEnabled = track.isEnabled
-            let mediaType = assetTrack?.mediaType.rawValue ?? "unknown"
-            print("  - Track \(index): type=\(mediaType), enabled=\(isEnabled)")
-
-            if mediaType == "vide" {
-              audioOnlyContent = false  // Not audio-only since we found a video track
-
-              if isEnabled {
-                hasEnabledVideoTrack = true
-              } else {
-                // Immediately enable any disabled video tracks
-                track.isEnabled = true
-                hasEnabledVideoTrack = true
-                print("🛠️ PREEMPTIVE-FIX: Enabled disabled video track")
-              }
-            }
-          }
-
-          // Store last state for comparison
-          let currentVideoTrackState = hasEnabledVideoTrack
-          let videoStateChanged = BlackScreenState.lastVideoTrackState != currentVideoTrackState
-          BlackScreenState.lastVideoTrackState = currentVideoTrackState
-
-          // Alert if no enabled video tracks (could cause black screen)
-          if !hasEnabledVideoTrack && !audioOnlyContent && !tracks.isEmpty {
-            print("⚠️ BLACK SCREEN RISK: No enabled video tracks found!")
-
-            // Try to automatically recover by enabling all video tracks
-            for track in tracks {
-              if track.assetTrack?.mediaType.rawValue == "vide" {
-                track.isEnabled = true
-                print("🛠️ AUTO-RECOVERY: Forcing video track to be enabled")
-              }
-            }
-
-            // Add black screen recovery notification - this will trigger UI layer refresh
-            // This allows the VideoPlayerUIView to try to refresh its player layer
-            print("🛠️ AUTO-RECOVERY: Broadcasting black screen recovery request")
-            NotificationCenter.default.post(
-              name: NSNotification.Name("BlackScreenRecoveryRequest"),
-              object: nil
-            )
-
-            // Aggressive recovery: also try HLS mode if we're in direct mode
-            if !playerManager.useHLS && !playerManager.wasForceHLS
-              && !BlackScreenState.hasReportedBlackScreen {
-              // Check if this is an HEVC video (which has known issues with black screen in Direct mode)
-              let isHEVCVideo =
-                playerManager.currentScene?.files?.first?.video_codec?.lowercased() == "hevc"
-              let isKnownHEVCVideo =
-                playerManager.currentScene != nil
-                && VideoPlayerManager.problematicCodecVideos.contains(
-                  playerManager.currentScene!.id)
-
-              let hevcSpecificMessage =
-                isHEVCVideo || isKnownHEVCVideo
-                ? "HEVC/H.265 video detected - Try HLS mode"
-                : "Black screen detected - Try HLS mode"
-
-              print("🛠️ CRITICAL RECOVERY: \(hevcSpecificMessage)")
-              BlackScreenState.hasReportedBlackScreen = true
-
-              // Post notification to show HLS fallback option to user
-              NotificationCenter.default.post(
-                name: NSNotification.Name("VideoPlayerFeedback"),
-                object: nil,
-                userInfo: ["message": hevcSpecificMessage]
-              )
-
-              // For HEVC videos, be more aggressive about switching to HLS mode
-              if isHEVCVideo || isKnownHEVCVideo {
-                print("🛠️ AUTO-FALLBACK: HEVC video with black screen, automating HLS switch")
-                // Schedule automatic fallback after 5 seconds if user doesn't act
-                let deadline = DispatchTime.now() + 5.0
-                let workItem = DispatchWorkItem {
-                  if !playerManager.useHLS && (isHEVCVideo || isKnownHEVCVideo) {
-                    let currentPosition = playerManager.currentTime
-                    // Post notification about auto-switching
-                    NotificationCenter.default.post(
-                      name: NSNotification.Name("VideoPlayerFeedback"),
-                      object: nil,
-                      userInfo: ["message": "Auto-switching to HLS mode for HEVC video"]
-                    )
-
-                    // Auto-switch to HLS mode
-                    playerManager.useHLS = true
-                    playerManager.wasForceHLS = true
-                    playerManager.isPerformingFallback = true
-
-                    // Remember position
-                    playerManager.lastPlaybackPosition = currentPosition
-
-                    // Reload player with HLS
-                    if let scene = playerManager.currentScene {
-                      Task { @MainActor in
-                        await playerManager.setupPlayer(for: scene, startTime: currentPosition)
-                      }
-                    }
-                  }
-                }
-                DispatchQueue.main.asyncAfter(deadline: deadline, execute: workItem)
-              }
-            }
-
-            // Force player item reload in extreme cases
-            if let player = playerManager.player {
-              print("🛠️ AUTO-RECOVERY: Nudging player to refresh rendering pipeline")
-              // Small time jump can reset rendering pipeline
-              let currentTime = player.currentTime()
-              let newTime = CMTimeAdd(currentTime, CMTime(value: 1, timescale: 10))  // +0.1 seconds
-              player.seek(to: newTime, toleranceBefore: .zero, toleranceAfter: .zero)
-              player.pause()
-              player.play()
-
-              // Add more aggressive refresh for when playback is stuck
-              let deadline = DispatchTime.now() + 0.5
-              let workItem = DispatchWorkItem {
-                // Use notification center to force layer redraw via PlayerContainerView
-                NotificationCenter.default.post(
-                  name: NSNotification.Name("BlackScreenRecoveryRequest"),
-                  object: nil
-                )
-                print("🛠️ DEEP RECOVERY: Forcing layer redraw via notification")
-              }
-              DispatchQueue.main.asyncAfter(deadline: deadline, execute: workItem)
-            }
-          } else if hasEnabledVideoTrack && videoStateChanged {
-            // Video track is now enabled - reset black screen flag
-            BlackScreenState.hasReportedBlackScreen = false
-            print("✅ VIDEO TRACK: Enabled video track detected, video should be visible")
-          }
-        }
+        // Intentionally left blank; placeholder for future monitoring hooks
       }
       // Add special gesture for scrubbing with magnification gesture (pinch)
       .gesture(
         MagnificationGesture(minimumScaleDelta: 0.01)
           .onChanged { value in
-            // Normalize the magnification to a position on the timeline
-            let position = geometry.size.width * min(max(0, CGFloat(value / 5.0)), 1.0)
+            // Use a logarithmic mapping for more intuitive control
+            // Map magnification to timeline: 0.5 = start, 1.0 = middle, 2.0 = end
+            let clampedValue = max(0.25, min(4.0, value))  // Reasonable bounds
+
+            // Logarithmic mapping: log(0.25)=-1.386, log(1.0)=0, log(4.0)=1.386
+            let logValue = log(clampedValue)
+            let normalizedLog = (logValue + 1.386) / (2 * 1.386)  // Maps to 0-1
+            let ratio = max(0, min(1.0, normalizedLog))
+
+            let position = geometry.size.width * CGFloat(ratio)
 
             // Use custom method for pinch scrubbing
             handlePinchScrubbing(position: position, geometry: geometry)
@@ -715,17 +586,20 @@ struct VideoPlayerView: View {
               showControls = true
             }
 
-            print("🔍 Pinch scrubbing at position: \(position)/\(geometry.size.width)")
+            print("🔍 Pinch scrubbing - scale: \(value), ratio: \(ratio), position: \(position)")
           }
           .onEnded { value in
-            // Normalize the final magnification to a position
-            let position = geometry.size.width * min(max(0, CGFloat(value / 5.0)), 1.0)
+            // Calculate final position using same logarithmic logic as onChanged
+            let clampedValue = max(0.25, min(4.0, value))
+            let logValue = log(clampedValue)
+            let normalizedLog = (logValue + 1.386) / (2 * 1.386)
+            let ratio = max(0, min(1.0, normalizedLog))
+            let position = geometry.size.width * CGFloat(ratio)
 
             // Use custom method for finishing pinch scrubbing
             handlePinchScrubEnd(position: position, geometry: geometry)
 
             // Show feedback
-            let ratio = position / geometry.size.width
             let time = playerManager.duration * Double(ratio)
             showFeedback("⏱ \(playerManager.formatTime(time))")
 
@@ -742,6 +616,18 @@ struct VideoPlayerView: View {
     .navigationBarHidden(true)
     .statusBarHidden(true)
     .task {
+      // Set up black screen timeout callback
+      playerManager.setBlackScreenTimeoutCallback {
+        // Show controls and feedback instead of auto-shuffling
+        print("🚨 Black screen timeout triggered — showing controls")
+        NotificationCenter.default.post(
+          name: NSNotification.Name("VideoPlayerFeedback"),
+          object: nil,
+          userInfo: ["message": "Video slow to start"]
+        )
+        NotificationCenter.default.post(name: NSNotification.Name("ShowControls"), object: nil)
+      }
+
       await setupPlayer()
     }
     .onDisappear {
@@ -885,8 +771,12 @@ struct VideoPlayerView: View {
 
     // Determine the correct start time with minimal checks
     var startTime = appModel.videoStartTime
-    print("🎯 VideoPlayerView.setupPlayer() - Reading start time from appModel.videoStartTime: \(startTime)")
-    print("🎯 VideoPlayerView.setupPlayer() - appModel.selectedSceneStartTime: \(appModel.selectedSceneStartTime?.description ?? "nil")")
+    print(
+      "🎯 VideoPlayerView.setupPlayer() - Reading start time from appModel.videoStartTime: \(startTime)"
+    )
+    print(
+      "🎯 VideoPlayerView.setupPlayer() - appModel.selectedSceneStartTime: \(appModel.selectedSceneStartTime?.description ?? "nil")"
+    )
 
     // Quick check for app model start time
     if startTime == 0 && appModel.selectedSceneStartTime != nil {
@@ -898,16 +788,20 @@ struct VideoPlayerView: View {
     if startTime == 0 {
       let savedStartTime = UserDefaults.standard.double(forKey: "last_video_start_time")
       let savedSceneId = UserDefaults.standard.string(forKey: "last_scene_id")
-      print("🎯 VideoPlayerView.setupPlayer() - UserDefaults savedStartTime: \(savedStartTime), savedSceneId: \(savedSceneId ?? "nil")")
+      print(
+        "🎯 VideoPlayerView.setupPlayer() - UserDefaults savedStartTime: \(savedStartTime), savedSceneId: \(savedSceneId ?? "nil")"
+      )
 
       if let savedId = savedSceneId, savedId == scene.id, savedStartTime > 0 {
         startTime = savedStartTime
         print("🎯 VideoPlayerView.setupPlayer() - Using UserDefaults savedStartTime: \(startTime)")
       }
     }
-    
+
     print("🎯 VideoPlayerView.setupPlayer() - Final startTime to be used: \(startTime)")
-    print("🎯 VideoPlayerView.setupPlayer() - About to call playerManager.setupPlayer with startTime: \(startTime > 0 ? startTime : 0)")
+    print(
+      "🎯 VideoPlayerView.setupPlayer() - About to call playerManager.setupPlayer with startTime: \(startTime > 0 ? startTime : 0)"
+    )
 
     // Improved audio setup with better error handling
     do {
@@ -1223,7 +1117,8 @@ struct VideoPlayerView: View {
               let (data, response) = try await URLSession.shared.data(for: request)
               if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                 let content = String(data: data, encoding: .utf8),
-                let entries = VideoPlayerUtility.parseVTTContent(content) {
+                let entries = VideoPlayerUtility.parseVTTContent(content)
+              {
                 await MainActor.run {
                   playerManager.vttEntries = entries
                   print(
@@ -1365,7 +1260,8 @@ struct VideoPlayerView: View {
 
               // Try to get oshash and load sprite directly
               if let fileInfo = await getFileInfo(forSceneID: scene.id),
-                let oshash = fileInfo["oshash"] as? String {
+                let oshash = fileInfo["oshash"] as? String
+              {
                 print("📋 Found oshash for sprite: \(oshash)")
 
                 // First try local mounted path if available
@@ -1403,7 +1299,8 @@ struct VideoPlayerView: View {
                       for: spriteRequest)
                     if let httpResponse = spriteResponse as? HTTPURLResponse,
                       httpResponse.statusCode == 200,
-                      let spriteImage = UIImage(data: spriteData) {
+                      let spriteImage = UIImage(data: spriteData)
+                    {
                       await MainActor.run {
                         playerManager.spriteSheetImage = spriteImage
                         print(
@@ -1425,7 +1322,8 @@ struct VideoPlayerView: View {
 
                 for spritePath in oshashSpritePaths {
                   if let spriteOshashUrl = VideoPlayerUtility.createURL(
-                    path: spritePath, includeApiKey: true) {
+                    path: spritePath, includeApiKey: true)
+                  {
                     print("🔍 Trying sprite with oshash: \(spriteOshashUrl.absoluteString)")
                     do {
                       let (oshashData, _) = try await URLSession.shared.data(from: spriteOshashUrl)
@@ -1471,7 +1369,8 @@ struct VideoPlayerView: View {
       // Validate coordinates against sprite sheet dimensions
       if matchingEntry.x < 0 || matchingEntry.y < 0
         || matchingEntry.x + matchingEntry.width > spriteWidth
-        || matchingEntry.y + matchingEntry.height > spriteHeight {
+        || matchingEntry.y + matchingEntry.height > spriteHeight
+      {
         print(
           "⚠️ Invalid sprite coordinates for this sprite sheet. Sprite size: \(spriteWidth)x\(spriteHeight), Coordinates: x=\(matchingEntry.x), y=\(matchingEntry.y), width=\(matchingEntry.width), height=\(matchingEntry.height)"
         )
@@ -1610,7 +1509,7 @@ struct VideoPlayerView: View {
                   // For nil gender, look for clues in the name that might suggest male
                   let name = performer.name.lowercased()
                   let commonMaleIndicators = [
-                    "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him"
+                    "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him",
                   ]
 
                   // If any male indicators are in the name, assume male
@@ -1632,7 +1531,8 @@ struct VideoPlayerView: View {
 
                 // Check for explicitly female indicators first (highest priority)
                 if gender == "female" || gender == "f" || gender.contains("female")
-                  || gender.contains("woman") || gender.contains("girl") || gender.contains("f/") {
+                  || gender.contains("woman") || gender.contains("girl") || gender.contains("f/")
+                {
                   print(
                     "🎭 DEBUG: Including '\(performer.name)' because gender is explicitly female: \(gender)"
                   )
@@ -1672,9 +1572,9 @@ struct VideoPlayerView: View {
           let finalTargetPosition: Double = 0
 
           // Verify that we actually have a playable video
-          // This checks for critical errors about 3 seconds after setup
+          // This checks for critical errors about 10 seconds after setup
           Task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)  // 3s delay
+            try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10s delay
 
             // If the player is nil, item is nil, or duration is zero, something went wrong
             let hasPlayer = playerManager.player != nil
@@ -1808,7 +1708,7 @@ struct VideoPlayerView: View {
               // For nil gender, look for clues in the name that might suggest male
               let name = performer.name.lowercased()
               let commonMaleIndicators = [
-                "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him"
+                "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him",
               ]
 
               // If any male indicators are in the name, assume male
@@ -1824,7 +1724,8 @@ struct VideoPlayerView: View {
 
             // Check for explicitly female indicators first (highest priority)
             if gender == "female" || gender == "f" || gender.contains("female")
-              || gender.contains("woman") || gender.contains("girl") || gender.contains("f/") {
+              || gender.contains("woman") || gender.contains("girl") || gender.contains("f/")
+            {
               return true
             }
 
@@ -1862,13 +1763,16 @@ struct VideoPlayerView: View {
 
           // Get the video duration
           let videoDuration = randomScene.files?.first?.duration ?? 0
+          print("🔍 videoDuration: \(videoDuration)")
 
           if videoDuration > 0 {
             // Calculate minimum of 5 minutes or video duration
             let minimumStartTime = min(5 * 60, videoDuration * 0.25)
+            print("🔍 minimumStartTime: \(minimumStartTime)")
 
             // Calculate maximum startTime (about 75% into the video to ensure enough content remains)
             let maximumStartTime = videoDuration * 0.75
+            print("🔍 maximumStartTime: \(maximumStartTime)")
 
             // Ensure we have enough playback time
             if maximumStartTime > minimumStartTime {
@@ -1960,100 +1864,7 @@ struct VideoPlayerView: View {
 
               // For HLS, add extra seeks with delays to ensure position sticks
               if playerManager.useHLS {
-                // Capture target position for use in async task
-                let finalPositionTarget = targetPosition
-
-                Task {
-                  // Extreme position verification for HLS mode
-                  // This is critical to ensure positions are maintained
-
-                  // Perform an immediate play to ensure the player is active
-                  playerManager.player?.play()
-
-                  print("🛡️ Starting extreme position maintenance protocol for HLS")
-
-                  // Initial delay to let HLS fully initialize
-                  try? await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds initial delay
-
-                  // First check if we're way off
-                  let initialPosition = playerManager.currentTime
-                  if initialPosition.isNaN || initialPosition <= 0.1
-                    || abs(initialPosition - finalPositionTarget) > 10.0 {
-                    print(
-                      "⚠️ Initial position check failed: current=\(formatTime(initialPosition)), target=\(formatTime(finalPositionTarget))"
-                    )
-
-                    // First attempt with forced play
-                    playerManager.player?.play()
-                    playerManager.seek(to: finalPositionTarget)
-                    showFeedback("Fixing position...")
-
-                    // Wait for seek to complete
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                  }
-
-                  // More aggressive position verification for HLS mode
-                  for i in 1...9 {  // Extended to 9 tries for HLS
-                    // Exponential backoff delays: 0.5s, 1s, 1.5s, 2s, 3s, 4s, 5s, 6s, 7s
-                    let delaySeconds = i <= 4 ? Double(i) * 0.5 : Double(i)
-                    try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-
-                    // Force a status check before getting position
-                    if playerManager.player?.timeControlStatus != .playing {
-                      print("⚠️ Player not playing during retry #\(i), forcing play")
-                      playerManager.player?.play()
-                    }
-
-                    // Get current position after delay
-                    let currentPosition = playerManager.currentTime
-                    let positionDifference = abs(currentPosition - finalPositionTarget)
-
-                    print(
-                      "🔍 HLS Position Check #\(i): current=\(formatTime(currentPosition)), target=\(formatTime(finalPositionTarget)), diff=\(String(format: "%.1f", positionDifference))s"
-                    )
-
-                    // Special handling for NaN values which indicate player reset
-                    let isNaN = currentPosition.isNaN || currentPosition <= 0.1
-
-                    // Check for problematic position or NaN
-                    if positionDifference > 5.0 || isNaN {
-                      print("⚠️ Retry #\(i): Position incorrect or NaN, forcing seek again")
-
-                      // Force player to play first in case it's paused
-                      playerManager.player?.play()
-
-                      // Wait a moment before seeking
-                      try? await Task.sleep(nanoseconds: 500_000_000)
-
-                      // Then seek to target position with replays for reliability
-                      playerManager.seek(to: finalPositionTarget)
-
-                      // Add a small delay and seek again for problematic cases
-                      try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
-                      playerManager.seek(to: finalPositionTarget)
-
-                      // Try a third time for really stubborn cases (HLS can be very finicky)
-                      if i >= 5 || isNaN {
-                        try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
-                        playerManager.seek(to: finalPositionTarget)
-                        print("🔄 Performed third seek for extreme reliability")
-
-                        // Force play again
-                        playerManager.player?.play()
-                      }
-
-                      // Explicitly post notification for user feedback on later retries
-                      if i >= 3 || isNaN {
-                        showFeedback("Fixing playback position...")
-                      }
-                    } else {
-                      print(
-                        "✅ Position verified correct after \(i) tries: \(formatTime(currentPosition))"
-                      )
-                      break
-                    }
-                  }
-                }
+                // The extreme position verification has been removed to simplify the code.
               }
             } else {
               print("✅ Position maintained correctly during setup")
@@ -2079,7 +1890,7 @@ struct VideoPlayerView: View {
                   // For nil gender, look for clues in the name that might suggest male
                   let name = performer.name.lowercased()
                   let commonMaleIndicators = [
-                    "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him"
+                    "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him",
                   ]
 
                   // If any male indicators are in the name, assume male
@@ -2101,7 +1912,8 @@ struct VideoPlayerView: View {
 
                 // Check for explicitly female indicators first (highest priority)
                 if gender == "female" || gender == "f" || gender.contains("female")
-                  || gender.contains("woman") || gender.contains("girl") || gender.contains("f/") {
+                  || gender.contains("woman") || gender.contains("girl") || gender.contains("f/")
+                {
                   print(
                     "🎭 DEBUG: Including '\(performer.name)' because gender is explicitly female: \(gender)"
                   )
@@ -2141,9 +1953,9 @@ struct VideoPlayerView: View {
           let finalTargetPosition: Double = 0
 
           // Verify that we actually have a playable video
-          // This checks for critical errors about 3 seconds after setup
+          // This checks for critical errors about 10 seconds after setup
           Task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)  // 3s delay
+            try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10s delay
 
             // If the player is nil, item is nil, or duration is zero, something went wrong
             let hasPlayer = playerManager.player != nil
@@ -2203,7 +2015,7 @@ struct VideoPlayerView: View {
         // For nil gender, look for clues in the name that might suggest male
         let name = performer.name.lowercased()
         let commonMaleIndicators = [
-          "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him"
+          "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him",
         ]
 
         // If any male indicators are in the name, assume male
@@ -2225,7 +2037,8 @@ struct VideoPlayerView: View {
 
       // Check for explicitly female indicators first (highest priority)
       if gender == "female" || gender == "f" || gender.contains("female")
-        || gender.contains("woman") || gender.contains("girl") || gender.contains("f/") {
+        || gender.contains("woman") || gender.contains("girl") || gender.contains("f/")
+      {
         print(
           "🎭 DEBUG: Including '\(performer.name)' because gender is explicitly female: \(gender)")
         return true
@@ -2330,7 +2143,8 @@ struct VideoPlayerView: View {
     // Find the performer's name
     var selectedPerformerName = "Unknown"
     if let performers = scene.performers,
-      let selectedPerformer = performers.first(where: { $0.id == selectedPerformerID }) {
+      let selectedPerformer = performers.first(where: { $0.id == selectedPerformerID })
+    {
       selectedPerformerName = selectedPerformer.name
       print("🎭 Selected performer: \(selectedPerformerName) (ID: \(selectedPerformerID))")
     }
@@ -2463,100 +2277,7 @@ struct VideoPlayerView: View {
 
               // For HLS, add extra seeks with delays to ensure position sticks
               if playerManager.useHLS {
-                // Capture target position for use in async task
-                let finalPositionTarget = targetPosition
-
-                Task {
-                  // Extreme position verification for HLS mode
-                  // This is critical to ensure positions are maintained
-
-                  // Perform an immediate play to ensure the player is active
-                  playerManager.player?.play()
-
-                  print("🛡️ Starting extreme position maintenance protocol for HLS")
-
-                  // Initial delay to let HLS fully initialize
-                  try? await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds initial delay
-
-                  // First check if we're way off
-                  let initialPosition = playerManager.currentTime
-                  if initialPosition.isNaN || initialPosition <= 0.1
-                    || abs(initialPosition - finalPositionTarget) > 10.0 {
-                    print(
-                      "⚠️ Initial position check failed: current=\(formatTime(initialPosition)), target=\(formatTime(finalPositionTarget))"
-                    )
-
-                    // First attempt with forced play
-                    playerManager.player?.play()
-                    playerManager.seek(to: finalPositionTarget)
-                    showFeedback("Fixing position...")
-
-                    // Wait for seek to complete
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                  }
-
-                  // More aggressive position verification for HLS mode
-                  for i in 1...9 {  // Extended to 9 tries for HLS
-                    // Exponential backoff delays: 0.5s, 1s, 1.5s, 2s, 3s, 4s, 5s, 6s, 7s
-                    let delaySeconds = i <= 4 ? Double(i) * 0.5 : Double(i)
-                    try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-
-                    // Force a status check before getting position
-                    if playerManager.player?.timeControlStatus != .playing {
-                      print("⚠️ Player not playing during retry #\(i), forcing play")
-                      playerManager.player?.play()
-                    }
-
-                    // Get current position after delay
-                    let currentPosition = playerManager.currentTime
-                    let positionDifference = abs(currentPosition - finalPositionTarget)
-
-                    print(
-                      "🔍 HLS Position Check #\(i): current=\(formatTime(currentPosition)), target=\(formatTime(finalPositionTarget)), diff=\(String(format: "%.1f", positionDifference))s"
-                    )
-
-                    // Special handling for NaN values which indicate player reset
-                    let isNaN = currentPosition.isNaN || currentPosition <= 0.1
-
-                    // Check for problematic position or NaN
-                    if positionDifference > 5.0 || isNaN {
-                      print("⚠️ Retry #\(i): Position incorrect or NaN, forcing seek again")
-
-                      // Force player to play first in case it's paused
-                      playerManager.player?.play()
-
-                      // Wait a moment before seeking
-                      try? await Task.sleep(nanoseconds: 500_000_000)
-
-                      // Then seek to target position with replays for reliability
-                      playerManager.seek(to: finalPositionTarget)
-
-                      // Add a small delay and seek again for problematic cases
-                      try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
-                      playerManager.seek(to: finalPositionTarget)
-
-                      // Try a third time for really stubborn cases (HLS can be very finicky)
-                      if i >= 5 || isNaN {
-                        try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
-                        playerManager.seek(to: finalPositionTarget)
-                        print("🔄 Performed third seek for extreme reliability")
-
-                        // Force play again
-                        playerManager.player?.play()
-                      }
-
-                      // Explicitly post notification for user feedback on later retries
-                      if i >= 3 || isNaN {
-                        showFeedback("Fixing playback position...")
-                      }
-                    } else {
-                      print(
-                        "✅ Position verified correct after \(i) tries: \(formatTime(currentPosition))"
-                      )
-                      break
-                    }
-                  }
-                }
+                // The extreme position verification has been removed to simplify the code.
               }
             } else {
               print("✅ Position maintained correctly during setup")
@@ -2582,7 +2303,7 @@ struct VideoPlayerView: View {
                   // For nil gender, look for clues in the name that might suggest male
                   let name = performer.name.lowercased()
                   let commonMaleIndicators = [
-                    "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him"
+                    "mr.", "mr ", "male", "boy", "man", "guy", "dude", "his", "him",
                   ]
 
                   // If any male indicators are in the name, assume male
@@ -2604,7 +2325,8 @@ struct VideoPlayerView: View {
 
                 // Check for explicitly female indicators first (highest priority)
                 if gender == "female" || gender == "f" || gender.contains("female")
-                  || gender.contains("woman") || gender.contains("girl") || gender.contains("f/") {
+                  || gender.contains("woman") || gender.contains("girl") || gender.contains("f/")
+                {
                   print(
                     "🎭 DEBUG: Including '\(performer.name)' because gender is explicitly female: \(gender)"
                   )
@@ -2644,9 +2366,9 @@ struct VideoPlayerView: View {
           let finalTargetPosition: Double = 0
 
           // Verify that we actually have a playable video
-          // This checks for critical errors about 3 seconds after setup
+          // This checks for critical errors about 10 seconds after setup
           Task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)  // 3s delay
+            try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10s delay
 
             // If the player is nil, item is nil, or duration is zero, something went wrong
             let hasPlayer = playerManager.player != nil
@@ -2772,7 +2494,8 @@ struct VideoPlayerView: View {
         let jsonData = jsonString.data(using: .utf8),
         let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
         let files = json["files"] as? [[String: Any]],
-        let firstFile = files.first {
+        let firstFile = files.first
+      {
         print("✅ Successfully retrieved file info with \(files.count) file(s)")
         return firstFile
       } else {
@@ -3199,6 +2922,7 @@ private struct VideoControlsView: View {
                     totalWidth: scrubberGeometry.size.width), height: 40
                 )
                 .cornerRadius(20)
+                .animation(.linear(duration: 0.5), value: playerManager.currentTime)  // Smooth animation for width changes
             }
 
             // Extra-large thumb indicator for VisionOS
@@ -3221,6 +2945,7 @@ private struct VideoControlsView: View {
                 totalWidth: scrubberGeometry.size.width), y: 60
             )  // Fixed vertical position
             .hoverEffect(.highlight)  // Add VisionOS hover effect
+            .animation(.linear(duration: 0.5), value: playerManager.currentTime)  // Smooth animation for position changes
           }
           // Use preference key to track scrubber geometry
           .preference(key: ScrubberSizePreferenceKey.self, value: scrubberGeometry.size)
@@ -3282,7 +3007,8 @@ private struct VideoControlsView: View {
   }
 
   private func calculateProgressWidth(currentTime: Double, duration: Double, totalWidth: CGFloat)
-    -> CGFloat {
+    -> CGFloat
+  {
     let safeDuration = max(duration, 1.0)
     let progress = currentTime / safeDuration
     let width = CGFloat(progress) * totalWidth
@@ -3338,7 +3064,7 @@ struct VideoControlsOverlay: View {
       .buttonStyle(.plain)
       .padding(10)  // Add padding to increase tap area
       .help("Find more scenes with this performer (females only)")
-      
+
       // Marker shuffle controls (only show when in marker shuffle mode)
       if appModel.isMarkerShuffleMode {
         // Previous marker button
@@ -3351,7 +3077,7 @@ struct VideoControlsOverlay: View {
         .buttonStyle(.plain)
         .padding(10)
         .help("Previous marker")
-        
+
         // Next marker button
         Button(action: { appModel.nextMarkerInShuffle() }) {
           Image(systemName: "forward.circle.fill")
@@ -3362,7 +3088,7 @@ struct VideoControlsOverlay: View {
         .buttonStyle(.plain)
         .padding(10)
         .help("Next marker")
-        
+
         // Exit shuffle button
         Button(action: { appModel.stopMarkerShuffle() }) {
           Image(systemName: "xmark.circle.fill")
@@ -3373,7 +3099,7 @@ struct VideoControlsOverlay: View {
         .buttonStyle(.plain)
         .padding(10)
         .help("Exit marker shuffle")
-        
+
         // Shuffle info display
         VStack(alignment: .leading, spacing: 2) {
           Text("Marker Shuffle")
@@ -3434,7 +3160,8 @@ struct VideoControlsOverlay: View {
 
             // Check if current video is HEVC which might need HLS mode
             if let codec = playerManager.currentScene?.files?.first?.video_codec?.lowercased(),
-              (codec.contains("hevc") || codec.contains("h265")) && !playerManager.useHLS {
+              (codec.contains("hevc") || codec.contains("h265")) && !playerManager.useHLS
+            {
               Text("HEVC video - try HLS if jittery")
                 .font(.system(size: 10))
                 .foregroundStyle(Color.red.opacity(0.9))
@@ -3467,12 +3194,29 @@ struct VideoControlsOverlay: View {
           let isHLS = Binding<Bool>(
             get: { playerManager.useHLS },
             set: {
+              let currentPos = playerManager.currentTime
               playerManager.useHLS = $0
               // Make sure wasForceHLS stays in sync for UI consistency
               playerManager.wasForceHLS = $0
               print("🔄 Manual streaming mode switch to: \($0 ? "HLS" : "Direct")")
+
+              // Note: Seeking state will be reset during cleanup
+
+              // Reset fallback counters
+              playerManager.directPlaybackRetryCount = 0
+              playerManager.consecutiveStallCount = 0
+              playerManager.isPerformingFallback = false
+
               // Force immediate application of the setting
               UserDefaults.standard.synchronize()
+
+              // Auto-restart with new mode
+              if let scene = playerManager.currentScene {
+                playerManager.preservePositionForFallback(scene: scene, position: currentPos)
+                Task {
+                  await playerManager.setupPlayer(for: scene, startTime: currentPos)
+                }
+              }
             }
           )
 
@@ -3558,6 +3302,8 @@ struct VideoControlsOverlay: View {
             playerManager.consecutiveStallCount = 0
             playerManager.isPerformingFallback = false
 
+            // Note: Seeking state will be reset during cleanup and restart
+
             // Restart playback with current settings
             if let scene = playerManager.currentScene {
               // Store position explicitly for this scene
@@ -3588,12 +3334,26 @@ struct VideoControlsOverlay: View {
 class VideoPlayerManager: NSObject, ObservableObject {
   // Static collection to track problematic codec videos (WMV/HEVC) for special handling
   static var problematicCodecVideos: Set<String> = []
+  // Track consecutive failures per scene to skip problematic ones
+  private static var sceneFailureCounts: [String: Int] = [:]
 
   // StashAPI instance for API calls
   let api = StashAPI()
 
   @Published var player: AVPlayer?
-  @Published var isLoading = true
+  @Published var isLoading = true {
+    didSet {
+      if isLoading {
+        // Start black screen timeout when loading begins
+        startBlackScreenTimeout()
+      } else {
+        // Cancel timeout when loading completes
+        cancelBlackScreenTimeout()
+        // Allow future black-screen skips once playback succeeds
+        blackScreenFiredCount = 0
+      }
+    }
+  }
   @Published var error: Error?
   @Published var currentTime: Double = 0
   @Published var duration: Double = 0
@@ -3601,9 +3361,15 @@ class VideoPlayerManager: NSObject, ObservableObject {
   @Published var thumbnailCache: [String: UIImage] = [:]
   @Published var vttEntries: [VideoPlayerUtility.VTTEntry] = []
   @Published var spriteSheetImage: UIImage?
-  
-  // Flag to track if initial seek has been performed for shuffle mode
+
+  // Flag to track if initial seek has been performed for the current player setup
   private var hasPerformedInitialSeek = false
+
+  // Black screen timeout mechanism
+  private var blackScreenTimer: Timer?
+  // Prevent runaway loops by limiting how often we auto-skip on black screen
+  private var blackScreenFiredCount: Int = 0
+  private var onBlackScreenTimeout: (() -> Void)?
 
   // HLS mode with UserDefaults persistence
   @Published var useHLS: Bool = false {
@@ -3652,12 +3418,52 @@ class VideoPlayerManager: NSObject, ObservableObject {
   var lastPlaybackPosition: Double = 0
   var isPerformingFallback: Bool = false
   var needsExplicitPlayAfterSetup: Bool = false  // Flag to enforce playback after setup
+  // Feature flag: disable advancement stall monitor to avoid false restarts
+  var enableStallMonitor: Bool = false
+
+  // Black screen timeout methods
+  func setBlackScreenTimeoutCallback(_ callback: @escaping () -> Void) {
+    onBlackScreenTimeout = callback
+  }
+
+  private func startBlackScreenTimeout() {
+    // Cancel any existing timer
+    cancelBlackScreenTimeout()
+
+    // If we've already fired once during this loading session, don't schedule again
+    if blackScreenFiredCount > 0 {
+      print("⏱️ Black screen timeout already fired once — suppressing repeats")
+      return
+    }
+
+    print("⏱️ Starting 5-second black screen timeout")
+    blackScreenTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) {
+      [weak self] _ in
+      guard let self = self else { return }
+
+      // Check if still loading after 5 seconds
+      if self.isLoading {
+        print("🚨 BLACK SCREEN TIMEOUT: Video still loading after 5 seconds, skipping to next video")
+
+        // Trigger the timeout callback on main actor
+        Task { @MainActor in
+          self.blackScreenFiredCount += 1
+          self.onBlackScreenTimeout?()
+        }
+      }
+    }
+  }
+
+  private func cancelBlackScreenTimeout() {
+    blackScreenTimer?.invalidate()
+    blackScreenTimer = nil
+  }
 
   // Initialize with direct mode for performance
   override init() {
     // First set default values before super.init()
     self.useHLS = false
-    self.autoFallbackEnabled = true
+    self.autoFallbackEnabled = false
 
     super.init()
 
@@ -3703,6 +3509,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
   private var timeObserver: Any?
   private var itemObservation: NSKeyValueObservation?
   private var seekTime: Double?
+  private var isSeeking = false
+  private var lastSeekTime: Date = Date()
   private let sessionId = UUID().uuidString
   private var statusObservation: AnyCancellable?
   private var bufferObservation: AnyCancellable?
@@ -3777,13 +3585,16 @@ class VideoPlayerManager: NSObject, ObservableObject {
     // but reset other fallback flags
     let wasUsingHLS = useHLS
 
-    // Reset fallback flags if this is a new video (not a retry of the same one)
+    // Ensure the next player setup (including fallbacks) performs the initial seek
+    hasPerformedInitialSeek = false
+    print("🔄 Reset initial-seek flag for new setup")
+
+    // If this is a brand new scene (not a fallback of the same one), reset counters and mode
     if !isPerformingFallback || currentScene?.id != scene.id {
       directPlaybackRetryCount = 0
       consecutiveStallCount = 0
       isPerformingFallback = false
-      hasPerformedInitialSeek = false  // Reset seek flag for new video
-      print("🔄 Reset retry counters and seek flag for new video")
+      print("🔄 Reset retry counters for new scene")
 
       // Only reset to direct mode for new videos if not manually set by user
       if useHLS && !wasForceHLS {
@@ -3829,6 +3640,12 @@ class VideoPlayerManager: NSObject, ObservableObject {
 
     // Create an API instance
     let api = StashAPI()
+
+    // Prefer HLS on VPN/remote networks for reliability unless user manually forced direct
+    if (api.networkMonitor.networkMode != .local) && !useHLS && !wasForceHLS {
+      print("🌐 Non-local network detected (\(api.networkMonitor.networkMode.description)) - preferring HLS")
+      useHLS = true
+    }
 
     // Add a slight delay to ensure audio has been fully cleaned up
     do {
@@ -3928,7 +3745,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
           "AVURLAssetHTTPUserAgentKey":
             "Mozilla/5.0 (Apple Vision; Vision Pro) AppleWebKit/605.1.15",
           "AVURLAssetHTTPMaximumConnectionsPerHostKey": NSNumber(value: 5),
-          "AVURLAssetHTTPMayUsePipeliningKey": NSNumber(value: true)
+          "AVURLAssetHTTPMayUsePipeliningKey": NSNumber(value: true),
         ]
 
         let asset = AVURLAsset(url: url, options: assetOptions)
@@ -3999,7 +3816,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
 
         // Create timeout task
         let timeoutTask = Task {
-          try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 second timeout
+          try? await Task.sleep(nanoseconds: 15_000_000_000)  // 15 second timeout
           if !Task.isCancelled {
             print("⏱️ Asset loading timed out")
             loadingTimedOut = true
@@ -4077,7 +3894,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
               // This prevents the player from entering a bad state during initialization
               print("▶️ Starting playback first (visionOS compatibility)")
               player.play()
-              
+
               // If in HLS mode, use aggressive playback initiation
               if self.useHLS {
                 player.playImmediately(atRate: 1.0)
@@ -4086,33 +3903,35 @@ class VideoPlayerManager: NSObject, ObservableObject {
               // Now handle seeking after playback has started
               if let startTime = startTime {
                 print("🎯 visionOS: Seeking to \(self.formatTime(startTime)) after playback started")
-                
+
                 // Wait a moment for playback to fully initialize
                 Task {
-                  // Give the player time to start playing
-                  try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
-                  
+                  // Give the player time to start playing (short like iPadOS)
+                  try? await Task.sleep(nanoseconds: 300_000_000)  // 0.3 second
+
                   // Check if we've already performed initial seek (prevents looping in shuffle mode)
                   guard !self.hasPerformedInitialSeek else {
                     print("🎯 Skipping duplicate seek - already seeked to start position")
                     return
                   }
-                  
+
                   // Check if player is in a good state before seeking
                   guard player.currentItem?.status == .readyToPlay else {
                     print("⚠️ Player item not ready for seeking, skipping seek")
                     return
                   }
-                  
+
                   let time = CMTime(seconds: startTime, preferredTimescale: 600)
                   do {
                     print("🎯 visionOS: Performing delayed seek to \(self.formatTime(startTime))")
                     try await player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
                     print("✅ visionOS: Successfully seeked to \(self.formatTime(startTime))")
-                    
+
                     // Mark that we've performed the initial seek
-                    self.hasPerformedInitialSeek = true
-                    
+                    await MainActor.run {
+                      self.hasPerformedInitialSeek = true
+                    }
+
                     // Resume playback after seeking
                     player.play()
                     print("▶️ visionOS: Resumed playback after seeking")
@@ -4123,7 +3942,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
               }
 
               // Start playback advancement monitor after player starts in direct mode
-              if !self.useHLS && self.autoFallbackEnabled {
+              if self.enableStallMonitor && !self.useHLS && self.autoFallbackEnabled {
                 print("🔍 Starting playback advancement monitor for direct playback")
                 self.startPlaybackAdvancementMonitor()
               }
@@ -4150,7 +3969,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
                 // Specifically target the "Cannot Open" error which is common with direct playback
                 if itemError.domain == AVFoundationErrorDomain
                   && (itemError.code == -11828 || itemError.code == -11800) && !self.useHLS
-                  && self.autoFallbackEnabled {
+                  && self.autoFallbackEnabled
+                {
                   print(
                     "🚨 Critical AVFoundation error detected: \(errorDetails) - initiating immediate fallback"
                   )
@@ -4207,13 +4027,21 @@ class VideoPlayerManager: NSObject, ObservableObject {
           options: [.new, .initial],
           context: playbackBufferEmptyContext)
 
-        // Set up time observation
+        // Set up time observation with very infrequent updates to prevent blinking
         timeObserver = player.addPeriodicTimeObserver(
-          forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
-          queue: .main
+          forInterval: CMTime(seconds: 1.0, preferredTimescale: 600),
+          queue: DispatchQueue.global(qos: .utility)
         ) { [weak self] time in
+          guard let self = self else { return }
+          // Only update if we're not actively seeking
+          guard !self.isSeeking else { return }
+
+          // Also skip if we've seeked very recently (within 1.0 seconds) to prevent conflicts
+          let timeSinceLastSeek = Date().timeIntervalSince(self.lastSeekTime)
+          guard timeSinceLastSeek > 1.0 else { return }
+
+          // Update UI on main thread
           Task { @MainActor in
-            guard let self = self else { return }
             self.currentTime = time.seconds
           }
         }
@@ -4241,7 +4069,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
           let fileManager = FileManager.default
 
           if fileManager.fileExists(atPath: mountedVttPath),
-            let files = try? fileManager.contentsOfDirectory(atPath: mountedVttPath) {
+            let files = try? fileManager.contentsOfDirectory(atPath: mountedVttPath)
+          {
             print("✅ Found \(files.count) files in mounted VTT directory")
 
             // Log some files for debugging
@@ -4274,7 +4103,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
                 "\(oshash)_sprites.jpg",  // Plural variation
                 "\(oshash)_sprite.png",  // PNG variation
                 "\(oshash).jpg",  // Simple format
-                "\(oshash).png"  // Simple PNG format
+                "\(oshash).png",  // Simple PNG format
               ]
 
               // Find the first matching sprite file
@@ -4313,7 +4142,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
 
           // Fall back to async version if directory browsing didn't work
           if self.vttEntries.isEmpty,
-            let vttUrl = await VideoPlayerUtility.getVTTURLAsync(forSceneID: scene.id) {
+            let vttUrl = await VideoPlayerUtility.getVTTURLAsync(forSceneID: scene.id)
+          {
             print("🔍 Attempting to load VTT from local or remote: \(vttUrl.absoluteString)")
             if let entries = await VideoPlayerUtility.parseVTT(from: vttUrl) {
               await MainActor.run {
@@ -4322,7 +4152,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
               }
             } else if let alternativeUrl = VideoPlayerUtility.getAlternativeVTTURL(
               forSceneID: scene.id),
-              let entries = await VideoPlayerUtility.parseVTT(from: alternativeUrl) {
+              let entries = await VideoPlayerUtility.parseVTT(from: alternativeUrl)
+            {
               await MainActor.run {
                 self.vttEntries = entries
                 print("✅ Loaded \(entries.count) VTT entries from alternative URL")
@@ -4331,7 +4162,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
               // Try to get oshash from files
               print("🔍 Attempting to get oshash for VTT files")
               if let url = VideoPlayerUtility.createURL(
-                path: "/scene/\(scene.id)/file", includeApiKey: true) {
+                path: "/scene/\(scene.id)/file", includeApiKey: true)
+              {
                 let request = VideoPlayerUtility.createAuthenticatedRequest(url: url)
 
                 do {
@@ -4343,7 +4175,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
                     let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                     let files = json["files"] as? [[String: Any]],
                     let firstFile = files.first,
-                    let oshash = firstFile["oshash"] as? String {
+                    let oshash = firstFile["oshash"] as? String
+                  {
                     print("✅ Found oshash: \(oshash) for scene \(scene.id)")
 
                     // Try paths with oshash - using proper direct path to server
@@ -4355,7 +4188,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
                     // Try to load VTT using oshash
                     for oshashPath in oshashPaths {
                       if let url = VideoPlayerUtility.createURL(
-                        path: oshashPath, includeApiKey: true) {
+                        path: oshashPath, includeApiKey: true)
+                      {
                         print("🔑 Trying VTT path with oshash: \(url.absoluteString)")
                         if let entries = await VideoPlayerUtility.parseVTT(from: url) {
                           await MainActor.run {
@@ -4436,7 +4270,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
 
               // Try alternative sprite URL
               if let alternativeUrl = VideoPlayerUtility.getAlternativeSpriteURL(
-                forSceneID: scene.id) {
+                forSceneID: scene.id)
+              {
                 print(
                   "🔍 Attempting to load sprite sheet from alternative URL: \(alternativeUrl.absoluteString)"
                 )
@@ -4707,7 +4542,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
                           for i in 1...5 {
                             try? await Task.sleep(nanoseconds: UInt64(i * 500_000_000))  // 0.5s intervals
                             if let currentPlayer = self.player,
-                              currentPlayer.timeControlStatus != .playing {
+                              currentPlayer.timeControlStatus != .playing
+                            {
                               print("▶️ Additional play command #\(i) after stall fallback")
                               currentPlayer.play()
                             } else {
@@ -4829,7 +4665,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
                               for i in 1...5 {
                                 try? await Task.sleep(nanoseconds: UInt64(i * 500_000_000))  // 0.5s intervals
                                 if let currentPlayer = self.player,
-                                  currentPlayer.timeControlStatus != .playing {
+                                  currentPlayer.timeControlStatus != .playing
+                                {
                                   print("▶️ Additional play command #\(i) after buffer fallback")
                                   currentPlayer.play()
                                 } else {
@@ -4870,6 +4707,20 @@ class VideoPlayerManager: NSObject, ObservableObject {
     Task { @MainActor in
       print("🚨 Critical playback failure detected - initiating immediate fallback")
 
+      // Increment per-scene failure count and consider skipping
+      if let failingId = currentScene?.id {
+        let c = (VideoPlayerManager.sceneFailureCounts[failingId] ?? 0) + 1
+        VideoPlayerManager.sceneFailureCounts[failingId] = c
+        print("📉 Scene \(failingId) failure count: \(c)")
+        if c >= 2 {
+          print("🚫 Scene \(failingId) failed twice — showing controls, not auto-shuffling")
+          isLoading = false
+          NotificationCenter.default.post(name: NSNotification.Name("ShowControls"), object: nil)
+          // Keep counter so repeated errors won't thrash
+          return
+        }
+      }
+
       // Apply to both direct and HLS playback for more robust fallback
       if autoFallbackEnabled {
         // Increment retry counter
@@ -4899,14 +4750,17 @@ class VideoPlayerManager: NSObject, ObservableObject {
             return
           }
 
-          if let scene = currentScene {
+          // Optional: try preview URL fallback (disabled by default due to instability)
+          let enablePreviewFallback = false
+          if enablePreviewFallback, let scene = currentScene {
             // Try to fetch scene details to check for preview format options
             let api = StashAPI()
             do {
               if let sceneDetails = try await api.fetchScene(byID: scene.id) {
                 // Use a preview URL instead as fallback
                 if let previewURL = sceneDetails.paths.preview,
-                  let url = URL(string: previewURL) {
+                  let url = URL(string: previewURL)
+                {
                   print("🔄 Trying preview URL as fallback: \(previewURL)")
 
                   // Clean up current player
@@ -5020,7 +4874,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)  // 3 seconds
                 if let currentPlayer = self.player,
                   currentPlayer.timeControlStatus != .playing
-                    || (self.duration.isNaN || self.duration <= 0) {
+                    || (self.duration.isNaN || self.duration <= 0)
+                {
                   print("⚠️ Playback still not working after multiple attempts - emergency fallback")
 
                   // Trigger the failure handler again to try alternative format
@@ -5082,6 +4937,9 @@ class VideoPlayerManager: NSObject, ObservableObject {
 
   func cleanup() {
     print("🧹 Performing thorough player cleanup")
+
+    // Cancel black screen timeout
+    cancelBlackScreenTimeout()
 
     // Cancel any running stall detector task
     playbackStallDetector?.cancel()
@@ -5147,6 +5005,10 @@ class VideoPlayerManager: NSObject, ObservableObject {
       error = nil
       errorMessage = ""
 
+      // Reset seeking state variables
+      isSeeking = false
+      hasPerformedInitialSeek = false
+
       // Critical cache flush - this is super important for VTT issues
       print("🧹 CRITICAL: Clearing all caches and state data for proper reset")
       thumbnailCache.removeAll()
@@ -5178,16 +5040,24 @@ class VideoPlayerManager: NSObject, ObservableObject {
 
     print("🎬 Seeking to time: \(formatTime(time))")
 
+    // Set seeking flag to prevent time observer conflicts
+    isSeeking = true
+    lastSeekTime = Date()
+
     // Use proper CMTime with high precision
     let cmTime = CMTime(seconds: time, preferredTimescale: 600)
 
     // Use precise seeking for better results
     player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
-      guard let self = self, finished else { return }
+      guard let self = self, finished else {
+        self?.isSeeking = false
+        return
+      }
 
-      // Force update current time after seek
+      // Force update current time after seek and clear seeking flag
       Task { @MainActor in
         self.currentTime = time
+        self.isSeeking = false
 
         // Ensure playback continues after seeking
         if player.timeControlStatus != .playing {
@@ -5438,7 +5308,8 @@ extension VideoPlayerManager {
     // Try global position as last resort
     if let lastSceneID = VideoPlayerManager.lastSceneWithFallback,
       lastSceneID == sceneID,
-      UserDefaults.standard.contains(key: "global_last_position") {
+      UserDefaults.standard.contains(key: "global_last_position")
+    {
       let position = UserDefaults.standard.double(forKey: "global_last_position")
       if position > 0 {
         print("🎯 Retrieved fallback position from global backup: \(formatTimeString(position))")

@@ -464,9 +464,9 @@ class StashAPI: ObservableObject {
       return await getStreamRequest(forSceneID: id, useHLS: false, startTime: startTime)
 
     case .vpn:
-      // Minimize handshakes for VPN
-      print("🎬 Using VPN-optimized streaming")
-      return await getVPNOptimizedRequest(forSceneID: id, startTime: startTime)
+      // Prefer HLS on VPN for reliability (direct often stalls over VPN)
+      print("🎬 Using VPN-optimized streaming (prefer HLS)")
+      return await getStreamRequest(forSceneID: id, useHLS: true, startTime: startTime)
 
     case .remote:
       // Use HLS for better reliability over internet
@@ -1961,7 +1961,7 @@ class StashAPI: ObservableObject {
           stats {
             scene_count
             scenes_size
-            scene_duration
+            scenes_duration
             image_count
             images_size
             gallery_count
@@ -2141,7 +2141,7 @@ class StashAPI: ObservableObject {
 struct StashStats: Codable {
   let scene_count: Int
   let scenes_size: Int64
-  let scene_duration: Double
+  let scenes_duration: Double
   let image_count: Int
   let images_size: Int64
   let gallery_count: Int
@@ -2412,4 +2412,3 @@ extension StashAPI {
     return try await performGraphQLRequest(query: query)
   }
 }
-
