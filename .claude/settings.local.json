@@ -15,7 +15,8 @@
       "Bash(git pull:*)",
       "Bash(/mcp)",
       "mcp__ref-tools__ref_search_documentation",
-      "WebSearch"
+      "WebSearch",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }

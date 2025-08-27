@@ -457,6 +457,17 @@ class StashAPI: ObservableObject {
 
     print("🌐 Getting optimized stream for network mode: \(networkMode.description)")
 
+    // CRITICAL: Check for user's saved HLS preference first
+    let userHasHLSPreference = UserDefaults.standard.object(forKey: "player_use_hls_mode") != nil
+    if userHasHLSPreference {
+      let savedHLSMode = UserDefaults.standard.bool(forKey: "player_use_hls_mode")
+      print("📱 Using saved user HLS preference: \(savedHLSMode ? "HLS" : "Direct")")
+      return await getStreamRequest(forSceneID: id, useHLS: savedHLSMode, startTime: startTime)
+    }
+
+    // If no user preference, use network-optimized defaults
+    print("🔧 No user HLS preference found, using network-optimized defaults")
+    
     switch networkMode {
     case .local:
       // Use full-featured approach for local network
