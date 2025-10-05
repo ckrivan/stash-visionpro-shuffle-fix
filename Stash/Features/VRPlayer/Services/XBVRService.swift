@@ -285,7 +285,15 @@ private struct DeoVRListItem: Codable {
   func toXBVRVideo(baseURL: String, sceneId: String) -> XBVRVideo {
     // For list items, we create a placeholder stream URL
     // The actual stream URL will be fetched when the user plays the video
-    let placeholderURL = URL(string: "\(baseURL)\(video_url)")!
+
+    // Safely construct URL - video_url is a path like "/deovr/123"
+    let urlString = "\(baseURL)\(video_url)"
+    let placeholderURL = URL(string: urlString) ?? URL(string: "about:blank")!
+
+    print("🔗 Creating video: \(title)")
+    print("   URL string: \(urlString)")
+    print("   Placeholder URL: \(placeholderURL.absoluteString)")
+
     let thumbURL = thumbnailUrl.flatMap { URL(string: $0) }
 
     return XBVRVideo(
