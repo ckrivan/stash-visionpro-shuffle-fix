@@ -38,6 +38,7 @@ struct SceneRow: View {
         thumbnailView
           .opacity(isPreviewPlaying ? 0 : 1)
           .animation(.easeInOut(duration: 0.3), value: isPreviewPlaying)
+          .hoverEffect(.lift)
 
         // Show video player on top when actively playing - using preview URL
         if let url = previewURL, isPreviewPlaying {
@@ -147,7 +148,8 @@ struct SceneRow: View {
 
         // Performers
         if let performers = scene.performers,
-          !performers.isEmpty {
+          !performers.isEmpty
+        {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
               ForEach(performers) { performer in
@@ -156,7 +158,8 @@ struct SceneRow: View {
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.purple.opacity(0.2))
+                    .background(.thinMaterial)
+                    .glassBackgroundEffect()
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -169,7 +172,8 @@ struct SceneRow: View {
 
         // Tags (tappable)
         if let tags = scene.tags,
-          !tags.isEmpty {
+          !tags.isEmpty
+        {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
               ForEach(tags) { tag in
@@ -178,7 +182,8 @@ struct SceneRow: View {
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.secondary.opacity(0.2))
+                    .background(.ultraThinMaterial)
+                    .glassBackgroundEffect()
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -192,7 +197,9 @@ struct SceneRow: View {
       .padding(16)
     }
     .background(.ultraThinMaterial)
+    .glassBackgroundEffect()
     .clipShape(RoundedRectangle(cornerRadius: 16))
+    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     .onAppear {
       isVisible = true
     }
@@ -243,7 +250,8 @@ struct SceneRow: View {
 
       // Screenshot from server
       if let screenshotPath = scene.paths.screenshot,
-        let url = URL(string: screenshotPath) {
+        let url = URL(string: screenshotPath)
+      {
         AsyncImage(url: url) { image in
           image
             .resizable()
@@ -274,7 +282,7 @@ struct SceneRow: View {
       "Accept-Language": "en-US,en;q=0.9",
       "User-Agent": "Mozilla/5.0 (Apple Vision; Vision Pro) AppleWebKit/605.1.15",
       "Connection": "keep-alive",
-      "X-Playback-Session-Id": UUID().uuidString
+      "X-Playback-Session-Id": UUID().uuidString,
     ]
 
     // Enhanced asset options for better streaming
@@ -285,7 +293,7 @@ struct SceneRow: View {
       "AVURLAssetUsesNSURLSessionKey": true,
       "AVURLAssetPreferPreciseDurationAndTimingKey": true,
       "AVURLAssetHTTPMaximumConnectionsPerHostKey": NSNumber(value: 5),
-      "AVURLAssetHTTPUserAgentKey": "Mozilla/5.0 (Apple Vision; Vision Pro) AppleWebKit/605.1.15"
+      "AVURLAssetHTTPUserAgentKey": "Mozilla/5.0 (Apple Vision; Vision Pro) AppleWebKit/605.1.15",
     ]
 
     let asset = AVURLAsset(url: previewURL, options: assetOptions)

@@ -101,7 +101,8 @@ struct PerformerCard: View {
   var body: some View {
     VStack {
       if let imagePath = performer.image_path,
-        let imageURL = URL(string: imagePath) {
+        let imageURL = URL(string: imagePath)
+      {
         AsyncImage(url: imageURL) { image in
           image
             .resizable()
@@ -125,6 +126,7 @@ struct PerformerCard: View {
     }
     .padding()
     .background(.ultraThinMaterial)
+    .glassBackgroundEffect()
     .clipShape(RoundedRectangle(cornerRadius: 16))
     .hoverEffect(.lift)
   }

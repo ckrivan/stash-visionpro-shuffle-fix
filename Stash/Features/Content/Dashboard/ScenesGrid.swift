@@ -23,6 +23,7 @@ struct ScenesGrid: View {
           SceneRow(scene: scene)
             .frame(maxWidth: .infinity)
             .hoverEffect(.lift)
+            .contentShape(.interaction, RoundedRectangle(cornerRadius: 16))
             .onTapGesture {
               handleSceneSelection(scene)
             }
@@ -35,12 +36,14 @@ struct ScenesGrid: View {
           ProgressView()
             .gridCellColumns(columns.count)
             .padding()
+            .controlSize(.large)
         }
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 12)
     }
-    .onChange(of: appModel.immersiveSpaceState) { newState in
+    .scrollIndicators(.visible)
+    .onChange(of: appModel.immersiveSpaceState) { _, newState in
       if newState == .closed {
         isTransitioning = false
       }

@@ -2903,44 +2903,61 @@ private struct VideoControlsView: View {
 
             // Visual elements - use VStack alignment .top to ensure proper stacking
             VStack(alignment: .leading, spacing: 0) {
-              // Background track - significantly taller
-              Rectangle()
-                .fill(Color.white.opacity(0.3))
-                .frame(height: 40)  // Taller for better visibility and interaction
-                .cornerRadius(20)
+              // Background track with glass material - visionOS 2.6
+              ZStack(alignment: .leading) {
+                // Glass background track
+                RoundedRectangle(cornerRadius: 20)
+                  .fill(.ultraThinMaterial)
+                  .glassBackgroundEffect()
+                  .frame(height: 40)
+                  .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                      .stroke(.white.opacity(0.2), lineWidth: 1)
+                  )
 
-              // Progress fill - overlay on top of background for better positioning
-              Rectangle()
-                .fill(Color.white)
-                .frame(
-                  width: calculateProgressWidth(
-                    currentTime: playerManager.currentTime, duration: playerManager.duration,
-                    totalWidth: scrubberGeometry.size.width), height: 40
-                )
-                .cornerRadius(20)
-                .animation(.linear(duration: 0.5), value: playerManager.currentTime)  // Smooth animation for width changes
+                // Progress fill with glass effect
+                RoundedRectangle(cornerRadius: 20)
+                  .fill(.thinMaterial)
+                  .glassBackgroundEffect()
+                  .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                      .fill(.white.opacity(0.6))
+                  )
+                  .frame(
+                    width: calculateProgressWidth(
+                      currentTime: playerManager.currentTime, duration: playerManager.duration,
+                      totalWidth: scrubberGeometry.size.width), height: 40
+                  )
+                  .animation(.linear(duration: 0.5), value: playerManager.currentTime)
+              }
             }
 
-            // Extra-large thumb indicator for VisionOS
+            // Extra-large thumb indicator with glass material - visionOS 2.6
             ZStack {
-              // Glow effect
+              // Glow effect with glass
               Circle()
-                .fill(Color.white.opacity(0.4))
-                .frame(width: 80, height: 80)  // Larger touch target
+                .fill(.ultraThinMaterial)
+                .glassBackgroundEffect()
+                .frame(width: 80, height: 80)
                 .blur(radius: 8)
 
-              // Thumb
+              // Thumb with glass and depth
               Circle()
-                .fill(Color.white)
-                .frame(width: 50, height: 50)  // Much larger for VisionOS hand tracking
-                .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
+                .fill(.regularMaterial)
+                .glassBackgroundEffect()
+                .overlay(
+                  Circle()
+                    .fill(.white.opacity(0.8))
+                )
+                .frame(width: 50, height: 50)
+                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
             }
             .position(
               x: calculateProgressWidth(
                 currentTime: playerManager.currentTime, duration: playerManager.duration,
                 totalWidth: scrubberGeometry.size.width), y: 60
             )  // Fixed vertical position
-            .hoverEffect(.highlight)  // Add VisionOS hover effect
+            .hoverEffect(.lift)  // visionOS 2.6 lift effect for playhead
             .animation(.linear(duration: 0.5), value: playerManager.currentTime)  // Smooth animation for position changes
           }
           // Use preference key to track scrubber geometry

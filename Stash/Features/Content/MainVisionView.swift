@@ -19,6 +19,7 @@ struct MainVisionView: View {
             .scaledToFit()
             .frame(width: 32, height: 32)
             .clipShape(RoundedRectangle(cornerRadius: 7))
+            .hoverEffect()
 
           Text("Stash")
             .font(.title2.bold())
@@ -26,7 +27,7 @@ struct MainVisionView: View {
         }
         .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
 
-        // VPN Status Indicator
+        // VPN Status Indicator with depth alignment for better spatial positioning
         VPNStatusIndicator()
           .frame(maxWidth: .infinity, alignment: .center)
           .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 16, trailing: 16))
@@ -42,6 +43,7 @@ struct MainVisionView: View {
               .frame(maxWidth: .infinity, alignment: .leading)
           }
           .buttonStyle(.plain)
+          .hoverEffect(.highlight)
           .listRowBackground(
             navigationModel.selectedTab == item
               ? Color.white.opacity(0.1)
@@ -51,11 +53,13 @@ struct MainVisionView: View {
       }
     }
     .listStyle(.sidebar)
+    .scrollContentBackground(.visible)
   }
 
   private var detailContent: some View {
     contentViewForTab
-      .background(.regularMaterial)
+      .background(.ultraThinMaterial)
+      .glassBackgroundEffect()
       .clipShape(RoundedRectangle(cornerRadius: 30))
       .padding(10)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -113,12 +117,12 @@ struct MainVisionView: View {
     }
     .navigationSplitViewStyle(.prominentDetail)
     .preferredColorScheme(.dark)
-    // Add video player overlay
-    .overlay {
-      if appModel.isShowingPlayer, let scene = appModel.selectedScene {
+    // visionOS 2.6: Use fullScreenCover for better presentation in volumes
+    .fullScreenCover(isPresented: $appModel.isShowingPlayer) {
+      if let scene = appModel.selectedScene {
         VideoPlayerView(scene: scene)
           .environmentObject(navigationModel)
-          .transition(.opacity)
+          .transition(.opacity.combined(with: .scale(scale: 0.95)))
           .onAppear {
             // Store observer tokens to clean them up later
             dismissObserver = NotificationCenter.default.addObserver(
