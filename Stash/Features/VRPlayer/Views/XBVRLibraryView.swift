@@ -16,9 +16,8 @@ struct XBVRLibraryView: View {
 
   // Connection settings
   @State private var showConnectionSettings = false
-  @State private var serverURL = "http://192.168.86.100:9999"
-  @State private var apiKey =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJjayIsInN1YiI6IkFQSUtleSIsImlhdCI6MTczMTgwOTM2Mn0.7AOyZqTzyDsSnuDx__RBhuIIkoPg2btebToAlpK1zXo"
+  @State private var serverURL = "http://192.168.86.100:9998"
+  @State private var apiKey = ""
 
   var filteredVideos: [XBVRVideo] {
     if searchText.isEmpty {
@@ -44,11 +43,12 @@ struct XBVRLibraryView: View {
           connectionSetupView
         }
 
-        // Loading overlay
+        // Loading overlay - visionOS 2.6
         if isLoading && videos.isEmpty {
           ProgressView("Loading XBVR videos...")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Material.ultraThinMaterial)
+            .background(.ultraThinMaterial)
+            .glassBackgroundEffect()
         }
       }
       .navigationTitle("XBVR Library")
@@ -166,7 +166,7 @@ struct XBVRLibraryView: View {
           Text("Server URL")
             .font(.headline)
 
-          TextField("http://localhost:9999", text: $serverURL)
+          TextField("http://localhost:9998", text: $serverURL)
             .textFieldStyle(.roundedBorder)
         }
 
@@ -380,25 +380,35 @@ struct XBVRVideoCard: View {
         .frame(height: 180)
         .clipped()
 
-        // Video type badge
+        // Video type badge - visionOS 2.6
         VStack(spacing: 4) {
           Text(video.videoType.displayName)
             .font(.caption2)
             .fontWeight(.semibold)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(.blue.opacity(0.8))
+            .background(.thinMaterial)
+            .glassBackgroundEffect()
+            .overlay(
+              RoundedRectangle(cornerRadius: 4)
+                .fill(.blue.opacity(0.4))
+            )
             .foregroundColor(.white)
-            .cornerRadius(4)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
 
           Text(video.stereoMode.displayName)
             .font(.caption2)
             .fontWeight(.semibold)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(.purple.opacity(0.8))
+            .background(.thinMaterial)
+            .glassBackgroundEffect()
+            .overlay(
+              RoundedRectangle(cornerRadius: 4)
+                .fill(.purple.opacity(0.4))
+            )
             .foregroundColor(.white)
-            .cornerRadius(4)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .padding(8)
 
@@ -435,7 +445,7 @@ struct XBVRVideoCard: View {
           }
         }
 
-        // Tags
+        // Tags - visionOS 2.6
         if let tags = video.tags, !tags.isEmpty {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
@@ -444,8 +454,9 @@ struct XBVRVideoCard: View {
                   .font(.caption2)
                   .padding(.horizontal, 6)
                   .padding(.vertical, 2)
-                  .background(.secondary.opacity(0.2))
-                  .cornerRadius(8)
+                  .background(.ultraThinMaterial)
+                  .glassBackgroundEffect()
+                  .clipShape(RoundedRectangle(cornerRadius: 8))
               }
 
               if tags.count > 3 {
@@ -453,8 +464,9 @@ struct XBVRVideoCard: View {
                   .font(.caption2)
                   .padding(.horizontal, 6)
                   .padding(.vertical, 2)
-                  .background(.tertiary.opacity(0.2))
-                  .cornerRadius(8)
+                  .background(.ultraThinMaterial)
+                  .glassBackgroundEffect()
+                  .clipShape(RoundedRectangle(cornerRadius: 8))
               }
             }
           }
@@ -470,8 +482,10 @@ struct XBVRVideoCard: View {
       }
       .padding()
     }
-    .background(Material.ultraThinMaterial)
-    .cornerRadius(12)
+    .background(.ultraThinMaterial)
+    .glassBackgroundEffect()
+    .clipShape(RoundedRectangle(cornerRadius: 12))
+    .hoverEffect(.lift)
     .onTapGesture {
       onPlay()
     }

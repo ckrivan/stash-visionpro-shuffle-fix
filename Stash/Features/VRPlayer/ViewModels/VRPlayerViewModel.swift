@@ -66,8 +66,8 @@ class VRPlayerViewModel: ObservableObject {
     videoType = video.videoType
 
     do {
-      let streamURL = xbvrService.streamURL(for: video.id, quality: selectedQuality)
-      try await setupPlayer(with: streamURL)
+      // DeoVR API provides stream URL directly in the video model
+      try await setupPlayer(with: video.streamURL)
       isLoading = false
     } catch {
       self.error = error

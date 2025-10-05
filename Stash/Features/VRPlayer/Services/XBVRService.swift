@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-/// Service for communicating with Stash server API for VR content
+/// Service for communicating with XBVR server via DeoVR API for VR content
 class XBVRService: ObservableObject {
   // MARK: - Configuration
 
@@ -13,9 +13,8 @@ class XBVRService: ObservableObject {
     let timeout: TimeInterval
 
     init(
-      baseURL: String = "http://192.168.86.100:9999",
-      apiKey: String? =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJjayIsInN1YiI6IkFQSUtleSIsImlhdCI6MTczMTgwOTM2Mn0.7AOyZqTzyDsSnuDx__RBhuIIkoPg2btebToAlpK1zXo",
+      baseURL: String = "http://192.168.86.100:9998",
+      apiKey: String? = nil,
       username: String? = nil,
       password: String? = nil,
       timeout: TimeInterval = 30.0
@@ -65,36 +64,13 @@ class XBVRService: ObservableObject {
 
   // MARK: - Connection Management
 
-  /// Tests connection to Stash server (using for VR content)
+  /// Tests connection to XBVR server via DeoVR API
   func testConnection() async throws -> Bool {
-    let url = URL(string: "\(config.baseURL)/graphql")!
-
-    let query = """
-      {
-          "operationName": "FindScenes",
-          "variables": {
-              "filter": {
-                  "page": 1,
-                  "per_page": 1,
-                  "sort": "title",
-                  "direction": "ASC"
-              },
-              "scene_filter": {
-                  "tags": {
-                      "value": ["VR", "180", "360"],
-                      "modifier": "INCLUDES"
-                  }
-              }
-          },
-          "query": "query FindScenes($filter: FindFilterType, $scene_filter: SceneFilterType) { findScenes(filter: $filter, scene_filter: $scene_filter) { count scenes { id title } } }"
-      }
-      """
+    let url = URL(string: "\(config.baseURL)/deovr/")!
 
     var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpMethod = "GET"
     addAuthenticationHeaders(to: &request)
-    request.httpBody = query.data(using: .utf8)
 
     let (_, response) = try await session.data(for: request)
 
@@ -113,7 +89,7 @@ class XBVRService: ObservableObject {
 
   // MARK: - Video Management
 
-  /// Fetches list of VR videos from Stash server
+  /// Fetches list of VR videos from XBVR DeoVR API
   func fetchVideos(
     limit: Int = 50,
     offset: Int = 0,
@@ -123,61 +99,54 @@ class XBVRService: ObservableObject {
     await MainActor.run { isLoading = true }
     defer { Task { await MainActor.run { self.isLoading = false } } }
 
-    let url = URL(string: "\(config.baseURL)/graphql")!
+    let url = URL(string: "\(config.baseURL)/deovr/")!
 
-    let page = (offset / limit) + 1
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    addAuthenticationHeaders(to: &request)
 
-    let query = """
-      {
-          "operationName": "FindScenes",
-          "variables": {
-              "filter": {
-                  "page": \(page),
-                  "per_page": \(limit),
-                  "sort": "\(sort)",
-                  "direction": "DESC"
-              },
-              "scene_filter": {
-                  "tags": {
-                      "value": ["VR", "180", "360"],
-                      "modifier": "INCLUDES"
-                  }
-              }
-          },
-          "query": "query FindScenes($filter: FindFilterType, $scene_filter: SceneFilterType) { findScenes(filter: $filter, scene_filter: $scene_filter) { count scenes { id title details duration paths { screenshot preview stream } files { size duration video_codec width height } performers { id name } tags { id name } studio { id name } } } }"
+    let (data, response) = try await session.data(for: request)
+
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw XBVRError.invalidResponse
+    }
+
+    guard httpResponse.statusCode == 200 else {
+      throw XBVRError.httpError(httpResponse.statusCode)
+    }
+
+    do {
+      let decoder = JSONDecoder()
+      let libraryResponse = try decoder.decode(DeoVRLibraryResponse.self, from: data)
+
+      // Flatten all playlist items into a single array
+      var allVideos: [XBVRVideo] = []
+      for playlist in libraryResponse.scenes {
+        for item in playlist.list {
+          // Extract scene ID from video_url (format: "/deovr/{scene-id}")
+          let sceneId = item.video_url.replacingOccurrences(of: "/deovr/", with: "")
+
+          // Create XBVRVideo from list item
+          let video = try await self.fetchVideo(id: sceneId)
+          allVideos.append(video)
+        }
       }
-      """
 
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    addAuthenticationHeaders(to: &request)
-    request.httpBody = query.data(using: .utf8)
-
-    let (data, response) = try await session.data(for: request)
-
-    guard let httpResponse = response as? HTTPURLResponse else {
-      throw XBVRError.invalidResponse
-    }
-
-    guard httpResponse.statusCode == 200 else {
-      throw XBVRError.httpError(httpResponse.statusCode)
-    }
-
-    do {
-      let decoder = JSONDecoder()
-      let stashResponse = try decoder.decode(VRStashScenesResponse.self, from: data)
-      return stashResponse.data.findScenes.scenes.map { $0.toXBVRVideo(baseURL: config.baseURL) }
+      // Apply pagination
+      let start = min(offset, allVideos.count)
+      let end = min(offset + limit, allVideos.count)
+      return Array(allVideos[start..<end])
     } catch {
       throw XBVRError.decodingError(error)
     }
   }
 
-  /// Fetches detailed information for a specific video
+  /// Fetches detailed information for a specific video from DeoVR API
   func fetchVideo(id: String) async throws -> XBVRVideo {
-    let url = URL(string: "\(config.baseURL)/api/videos/\(id)")!
+    let url = URL(string: "\(config.baseURL)/deovr/\(id)")!
 
     var request = URLRequest(url: url)
+    request.httpMethod = "GET"
     addAuthenticationHeaders(to: &request)
 
     let (data, response) = try await session.data(for: request)
@@ -192,44 +161,15 @@ class XBVRService: ObservableObject {
 
     do {
       let decoder = JSONDecoder()
-      return try decoder.decode(XBVRVideo.self, from: data)
+      let deovrScene = try decoder.decode(DeoVRScene.self, from: data)
+      return deovrScene.toXBVRVideo()
     } catch {
       throw XBVRError.decodingError(error)
     }
   }
 
-  /// Gets stream URL for a video
-  func streamURL(for videoId: String, quality: VideoQuality = .original) -> URL {
-    var urlString = "\(config.baseURL)/api/dms/file/\(videoId)"
-
-    if quality != .original {
-      urlString += "?quality=\(quality.rawValue)"
-    }
-
-    // Add API key as query parameter if available
-    if let apiKey = config.apiKey {
-      let separator = quality == .original ? "?" : "&"
-      urlString += "\(separator)apikey=\(apiKey)"
-    }
-
-    return URL(string: urlString)!
-  }
-
-  /// Gets thumbnail URL for a video
-  func thumbnailURL(for videoId: String, timestamp: TimeInterval? = nil) -> URL {
-    var urlString = "\(config.baseURL)/api/videos/\(videoId)/thumbnail"
-
-    if let timestamp = timestamp {
-      urlString += "?t=\(Int(timestamp))"
-    }
-
-    return URL(string: urlString)!
-  }
-
-  /// Gets VTT file URL for scrubbing thumbnails
-  func vttURL(for videoId: String) -> URL {
-    return URL(string: "\(config.baseURL)/api/videos/\(videoId)/thumbnails.vtt")!
-  }
+  // NOTE: Stream URLs, thumbnails, and VTT files are provided directly by the DeoVR API
+  // in the scene detail response, so these helper methods are not needed
 
   // MARK: - Search and Filtering
 
@@ -316,119 +256,121 @@ enum VideoQuality: String, CaseIterable {
   }
 }
 
-/// Response structure for Stash scenes API
-private struct VRStashScenesResponse: Codable {
-  let data: VRStashScenesData
+/// DeoVR Library Response
+private struct DeoVRLibraryResponse: Codable {
+  let authorized: String
+  let scenes: [DeoVRPlaylist]
 }
 
-private struct VRStashScenesData: Codable {
-  let findScenes: VRStashFindScenes
+/// DeoVR Playlist
+private struct DeoVRPlaylist: Codable {
+  let name: String
+  let list: [DeoVRListItem]
 }
 
-private struct VRStashFindScenes: Codable {
-  let count: Int
-  let scenes: [VRStashScene]
-}
-
-/// Stash Scene model from API (simplified for VR use)
-private struct VRStashScene: Codable {
-  let id: String
+/// DeoVR List Item (lightweight scene info)
+private struct DeoVRListItem: Codable {
   let title: String
-  let details: String?
-  let duration: Double?
-  let paths: VRStashPaths?
-  let files: [VRStashFile]?
-  let performers: [VRStashPerformer]?
-  let tags: [VRStashTag]?
-  let studio: VRStashStudio?
+  let videoLength: Double?
+  let thumbnailUrl: String?
+  let video_url: String
+}
 
-  func toXBVRVideo(baseURL: String) -> XBVRVideo {
-    // Determine video type based on tags
+/// DeoVR Scene Detail Response
+private struct DeoVRScene: Codable {
+  let id: Int?
+  let title: String
+  let authorized: Int?
+  let description: String?
+  let date: Int?
+  let actors: [DeoVRActor]?
+  let paysite: DeoVRSite?
+  let isFavorite: Bool?
+  let isScripted: Bool?
+  let is3d: Bool?
+  let stereoMode: String?
+  let screenType: String?
+  let videoLength: Double?
+  let encodings: [DeoVREncoding]?
+  let thumbnailUrl: String?
+
+  struct DeoVRActor: Codable {
+    let id: Int?
+    let name: String
+  }
+
+  struct DeoVRSite: Codable {
+    let id: Int?
+    let name: String
+    let is3rdParty: Bool?
+  }
+
+  struct DeoVREncoding: Codable {
+    let name: String
+    let videoSources: [DeoVRVideoSource]
+  }
+
+  struct DeoVRVideoSource: Codable {
+    let resolution: Int?
+    let height: Int?
+    let width: Int?
+    let size: Int64?
+    let url: String
+  }
+
+  /// Convert DeoVR scene to XBVRVideo
+  func toXBVRVideo() -> XBVRVideo {
+    // Determine video type from screenType
     let videoType: XBVRVideo.VideoType
-    let hasVRTag = tags?.contains { $0.name.lowercased().contains("vr") } ?? false
-    let has180Tag = tags?.contains { $0.name.lowercased().contains("180") } ?? false
-    let has360Tag = tags?.contains { $0.name.lowercased().contains("360") } ?? false
-
-    if has360Tag {
+    switch screenType?.lowercased() {
+    case "sphere":
       videoType = .vr360
-    } else if has180Tag || hasVRTag {
+    case "dome", "fisheye", "mkx200", "rf52":
       videoType = .vr180
-    } else {
+    default:
       videoType = .flat
     }
 
-    // Determine stereo mode based on tags or title
-    let stereoMode: XBVRVideo.StereoMode
-    let titleLower = title.lowercased()
-    let hasSBSTag =
-      tags?.contains {
-        $0.name.lowercased().contains("sbs") || $0.name.lowercased().contains("side")
-      } ?? false
-    let hasOUTag =
-      tags?.contains {
-        $0.name.lowercased().contains("ou") || $0.name.lowercased().contains("over")
-      } ?? false
-
-    if hasSBSTag || titleLower.contains("sbs") || titleLower.contains("side") {
-      stereoMode = .sideBySide
-    } else if hasOUTag || titleLower.contains("ou") || titleLower.contains("over") {
-      stereoMode = .overUnder
+    // Determine stereo mode
+    let stereo: XBVRVideo.StereoMode
+    if is3d == true {
+      switch stereoMode?.lowercased() {
+      case "sbs":
+        stereo = .sideBySide
+      case "tb":
+        stereo = .overUnder
+      default:
+        stereo = .sideBySide  // Default for 3D content
+      }
     } else {
-      stereoMode = .mono
+      stereo = .mono
     }
 
-    let streamURL = URL(string: "\(baseURL)/scene/\(id)/stream")!
-    let thumbnailURL = paths?.screenshot.flatMap { URL(string: "\(baseURL)\($0)") }
+    // Get highest quality video source
+    let videoSource = encodings?.first?.videoSources.first
+    let streamURL = videoSource.flatMap { URL(string: $0.url) } ?? URL(string: "about:blank")!
+    let thumbnailURL = thumbnailUrl.flatMap { URL(string: $0) }
+
+    let width = videoSource?.width ?? 1920
+    let height = videoSource?.height ?? 1080
 
     return XBVRVideo(
-      id: id,
+      id: id.map(String.init) ?? UUID().uuidString,
       title: title,
-      duration: duration ?? 0,
-      resolution: CGSize(
-        width: CGFloat(files?.first?.width ?? 1920),
-        height: CGFloat(files?.first?.height ?? 1080)
-      ),
+      duration: videoLength ?? 0,
+      resolution: CGSize(width: CGFloat(width), height: CGFloat(height)),
       videoType: videoType,
-      stereoMode: stereoMode,
+      stereoMode: stereo,
       streamURL: streamURL,
       thumbnailURL: thumbnailURL,
-      tags: tags?.map { $0.name },
-      performers: performers?.map { $0.name },
-      studio: studio?.name,
-      filePath: paths?.stream,
-      dateAdded: nil,
-      fileSize: files?.first?.size
+      tags: nil,  // DeoVR doesn't provide tags in scene response
+      performers: actors?.map { $0.name },
+      studio: paysite?.name,
+      filePath: nil,
+      dateAdded: date.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+      fileSize: videoSource?.size
     )
   }
-}
-
-private struct VRStashPaths: Codable {
-  let screenshot: String?
-  let preview: String?
-  let stream: String?
-}
-
-private struct VRStashFile: Codable {
-  let size: Int64?
-  let duration: Double?
-  let video_codec: String?
-  let width: Int?
-  let height: Int?
-}
-
-private struct VRStashPerformer: Codable {
-  let id: String
-  let name: String
-}
-
-private struct VRStashTag: Codable {
-  let id: String
-  let name: String
-}
-
-private struct VRStashStudio: Codable {
-  let id: String
-  let name: String
 }
 
 /// XBVR-specific errors
