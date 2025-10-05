@@ -47,11 +47,7 @@ class VRPlayerViewModel: ObservableObject {
     setupBindings()
   }
 
-  deinit {
-    Task { @MainActor in
-      cleanup()
-    }
-  }
+  // Note: No deinit needed - cleanup() is called when player is dismissed
 
   // MARK: - Public Methods
 

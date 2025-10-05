@@ -128,6 +128,7 @@ class XBVRService: ObservableObject {
         for item in playlist.list {
           // Extract scene ID from video_url (format: "/deovr/{scene-id}")
           let sceneId = item.video_url.replacingOccurrences(of: "/deovr/", with: "")
+          print("   📝 video_url: '\(item.video_url)' -> sceneId: '\(sceneId)'")
 
           // Create lightweight XBVRVideo from list item (no full fetch yet)
           let video = item.toXBVRVideo(baseURL: config.baseURL, sceneId: sceneId)
@@ -151,6 +152,8 @@ class XBVRService: ObservableObject {
   func fetchVideo(id: String) async throws -> XBVRVideo {
     let url = URL(string: "\(config.baseURL)/deovr/\(id)")!
 
+    print("🔍 Fetching video detail from: \(url.absoluteString)")
+
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
     addAuthenticationHeaders(to: &request)
@@ -158,18 +161,30 @@ class XBVRService: ObservableObject {
     let (data, response) = try await session.data(for: request)
 
     guard let httpResponse = response as? HTTPURLResponse else {
+      print("❌ Invalid response from server")
       throw XBVRError.invalidResponse
     }
 
+    print("📡 Response status code: \(httpResponse.statusCode)")
+
     guard httpResponse.statusCode == 200 else {
+      print("❌ HTTP error \(httpResponse.statusCode) for URL: \(url.absoluteString)")
+      if let responseString = String(data: data, encoding: .utf8) {
+        print("   Response body: \(responseString)")
+      }
       throw XBVRError.httpError(httpResponse.statusCode)
     }
 
     do {
       let decoder = JSONDecoder()
       let deovrScene = try decoder.decode(DeoVRScene.self, from: data)
+      print("✅ Successfully decoded scene: \(deovrScene.title)")
       return deovrScene.toXBVRVideo()
     } catch {
+      print("❌ JSON decoding error: \(error)")
+      if let responseString = String(data: data, encoding: .utf8) {
+        print("   Response JSON: \(responseString.prefix(500))")
+      }
       throw XBVRError.decodingError(error)
     }
   }
