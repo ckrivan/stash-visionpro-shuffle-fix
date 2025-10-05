@@ -209,43 +209,43 @@ private struct VideoPlayerUIView: UIViewRepresentable {
           // Check if player is playing
           let isPlaying = player.timeControlStatus == .playing
           print("🔍 Player item status: \(player.currentItem?.status.rawValue ?? -1), error: \(player.currentItem?.error)")
-
+        
           print(
             "🔍 10-second playback check: time=\(currentTime), playing=\(isPlaying ? "yes" : "no")")
-
+        
           // If we're not playing after 10 seconds, that's a critical failure
           if !isPlaying {
             print("⚠️ CRITICAL: Video didn't start playing after 10 seconds")
-
+        
             // First check if we have video track issues (black screen with audio)
             if let playerItem = player.currentItem,
               let tracks = playerItem.tracks as? [AVPlayerItemTrack]
             {
               print("🎥 CRITICAL FAILURE - Checking video tracks:")
               var hasEnabledVideoTrack = false
-
+        
               for (index, track) in tracks.enumerated() {
                 let assetTrack = track.assetTrack
                 let isEnabled = track.isEnabled
                 let mediaType = assetTrack?.mediaType.rawValue ?? "unknown"
                 print("  - Track \(index): type=\(mediaType), enabled=\(isEnabled)")
-
+        
                 if mediaType == "vide" && isEnabled {
                   hasEnabledVideoTrack = true
                 }
-
+        
                 // Try to enable video tracks if they're disabled
                 if mediaType == "vide" && !isEnabled {
                   track.isEnabled = true
                   print("🛠️ EMERGENCY FIX: Enabling disabled video track")
                 }
               }
-
+        
               if !hasEnabledVideoTrack {
                 print("🛑 CRITICAL ISSUE: Video has no enabled video tracks")
               }
             }
-
+        
             // Send notification to signal playback failure
             NotificationCenter.default.post(
               name: NSNotification.Name("VideoPlaybackFailure"),
@@ -294,9 +294,6 @@ struct VideoPlayerView: View {
   @State private var currentWindowSize: CGSize = .zero
   @State private var isResizing = false
   @State private var resizeTimer: Timer?
-  
-
-  
 
   // Initialize with the provided scene
   init(scene: StashScene) {
@@ -992,12 +989,11 @@ struct VideoPlayerView: View {
     // Cancel any existing resize timer
     resizeTimer?.invalidate()
 
-    // Create a new timer to clear the resizing flag after a delay
-    // This prevents accidental dismissal during or immediately after resizing
-    resizeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [self] _ in
-      self.isResizing = false
-      self.resizeTimer = nil
-      print("📏 Resize operation completed, player is now stable at size \(self.currentWindowSize)")
+    // Use Task for debouncing instead of Timer to avoid capture issues with struct
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(1))
+      isResizing = false
+      print("📏 Resize operation completed, player is now stable at size \(currentWindowSize)")
     }
   }
 
@@ -3643,7 +3639,9 @@ class VideoPlayerManager: NSObject, ObservableObject {
 
     // Prefer HLS on VPN/remote networks for reliability unless user manually forced direct
     if (api.networkMonitor.networkMode != .local) && !useHLS && !wasForceHLS {
-      print("🌐 Non-local network detected (\(api.networkMonitor.networkMode.description)) - preferring HLS")
+      print(
+        "🌐 Non-local network detected (\(api.networkMonitor.networkMode.description)) - preferring HLS"
+      )
       useHLS = true
     }
 

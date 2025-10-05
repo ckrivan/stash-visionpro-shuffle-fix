@@ -5,76 +5,60 @@ struct MainVisionView: View {
   @EnvironmentObject var appModel: AppModel
   @EnvironmentObject var navigationModel: NavigationModel
   @StateObject private var api = StashAPI()
+  @State private var dismissObserver: NSObjectProtocol?
+  @State private var shuffleObserver: NSObjectProtocol?
 
   // Split out views to avoid the compiler's type checking timeout
   private var sidebarContent: some View {
     List {
-      // App title with actual logo from file system
-      HStack(spacing: 8) {
-        // The actual app logo from the specified path
-        Image("image")
-          .resizable()
-          .scaledToFit()
-          .frame(width: 36, height: 36)
-          .clipShape(RoundedRectangle(cornerRadius: 8))
+      Section {
+        // App title with actual logo from file system
+        HStack(spacing: 12) {
+          Image("image")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 32, height: 32)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
 
-        Text("Stash")
-          .font(.title3.bold())
-          .foregroundColor(.white)
-      }
-      .listRowBackground(Color.clear)
-      .padding(.bottom, 12)
-
-      // VPN Status Indicator
-      HStack {
-        Spacer()
-        VPNStatusIndicator()
-        Spacer()
-      }
-      .listRowBackground(Color.clear)
-      .padding(.bottom, 16)
-
-      // Navigation links
-      ForEach(NavigationItem.allCases) { item in
-        Button(action: {
-          navigationModel.navigateTo(item)
-        }) {
-          Label(
-            title: { Text(item.rawValue) },
-            icon: { Image(systemName: item.icon) }
-          )
-          .foregroundColor(navigationModel.selectedTab == item ? .white : .white.opacity(0.7))
-          .font(navigationModel.selectedTab == item ? .body.weight(.medium) : .body)
+          Text("Stash")
+            .font(.title2.bold())
+            .foregroundStyle(.primary)
         }
-        .buttonStyle(.plain)
-        .listRowBackground(
-          navigationModel.selectedTab == item ? Color.white.opacity(0.15) : Color.clear
-        )
-        .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+        .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+
+        // VPN Status Indicator
+        VPNStatusIndicator()
+          .frame(maxWidth: .infinity, alignment: .center)
+          .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 16, trailing: 16))
+      }
+      .listSectionSeparator(.hidden)
+
+      Section("Library") {
+        ForEach(NavigationItem.allCases) { item in
+          Button(action: {
+            navigationModel.navigateTo(item)
+          }) {
+            Label(item.rawValue, systemImage: item.icon)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .buttonStyle(.plain)
+          .listRowBackground(
+            navigationModel.selectedTab == item
+              ? Color.white.opacity(0.1)
+              : Color.clear
+          )
+        }
       }
     }
-    .scrollContentBackground(.hidden)
-    .background(Color.black.opacity(0.001))  // Nearly transparent background
-    .toolbar(.hidden, for: .navigationBar)
+    .listStyle(.sidebar)
   }
 
   private var detailContent: some View {
-    ZStack {
-      // Background with uniform rounded corners
-      RoundedRectangle(cornerRadius: 30)
-        .fill(Color.black.opacity(0.05))
-        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 0)
-        .overlay(
-          RoundedRectangle(cornerRadius: 30)
-            .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
-        )
-
-      // Main content
-      contentViewForTab
-        .padding(2)  // Slight inset to preserve rounded corners
-    }
-    .padding(10)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    contentViewForTab
+      .background(.regularMaterial)
+      .clipShape(RoundedRectangle(cornerRadius: 30))
+      .padding(10)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   // Break out the content view as a computed property to reduce complexity
@@ -135,14 +119,9 @@ struct MainVisionView: View {
         VideoPlayerView(scene: scene)
           .environmentObject(navigationModel)
           .transition(.opacity)
-          .onDisappear {
-            print("🎬 Video player disappeared")
-            appModel.isShowingPlayer = false
-            appModel.selectedScene = nil
-          }
           .onAppear {
-            // Listen for dismiss notification
-            NotificationCenter.default.addObserver(
+            // Store observer tokens to clean them up later
+            dismissObserver = NotificationCenter.default.addObserver(
               forName: .init("DismissVideoPlayer"),
               object: nil,
               queue: .main
@@ -152,19 +131,34 @@ struct MainVisionView: View {
               appModel.selectedScene = nil
             }
 
-            // Listen for auto-skip request from player manager
-            NotificationCenter.default.addObserver(
+            shuffleObserver = NotificationCenter.default.addObserver(
               forName: .init("RequestShuffleNextScene"),
               object: nil,
               queue: .main
             ) { _ in
               print("🎬 Auto-skip requested — shuffling to next scene")
               appModel.isShowingPlayer = false
-              // Defer shuffling slightly to let cleanup settle
-              DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+              Task {
+                try? await Task.sleep(for: .seconds(0.2))
                 appModel.isShowingPlayer = true
               }
             }
+          }
+          .onDisappear {
+            print("🎬 Video player disappeared")
+
+            // Remove notification observers to prevent memory leaks
+            if let observer = dismissObserver {
+              NotificationCenter.default.removeObserver(observer)
+              dismissObserver = nil
+            }
+            if let observer = shuffleObserver {
+              NotificationCenter.default.removeObserver(observer)
+              shuffleObserver = nil
+            }
+
+            appModel.isShowingPlayer = false
+            appModel.selectedScene = nil
           }
       }
     }
@@ -196,7 +190,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
 struct MainVisionView_Previews: PreviewProvider {
   static var previews: some View {
     MainVisionView()
-      
+
       .environmentObject(NavigationModel())
   }
 }

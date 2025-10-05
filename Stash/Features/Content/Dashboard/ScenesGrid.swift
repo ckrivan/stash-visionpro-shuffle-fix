@@ -22,6 +22,7 @@ struct ScenesGrid: View {
         ForEach(scenes) { scene in
           SceneRow(scene: scene)
             .frame(maxWidth: .infinity)
+            .hoverEffect(.lift)
             .onTapGesture {
               handleSceneSelection(scene)
             }

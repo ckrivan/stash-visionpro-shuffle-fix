@@ -13,20 +13,69 @@ struct MediaLibraryView: View {
   @State private var currentFilter: String = "default"
 
   var body: some View {
-    NavigationStack {
-      GeometryReader { geometry in
-        MediaLibraryContentView(
-          api: api,
-          geometry: geometry,
-          selectedScene: $selectedScene,
-          showPlayer: $showPlayer,
-          isLoadingMore: isLoadingMore,
-          onDelete: { id in
-            api.scenes.removeAll { $0.id == id }
+    GeometryReader { geometry in
+      MediaLibraryContentView(
+        api: api,
+        geometry: geometry,
+        selectedScene: $selectedScene,
+        showPlayer: $showPlayer,
+        isLoadingMore: isLoadingMore,
+        onDelete: { id in
+          api.scenes.removeAll { $0.id == id }
+        },
+        onSceneTap: { scene in
+          selectedScene = scene
+          showPlayer = true
+          Task {
+            do {
+              try await api.fetchScenes(page: 1, sort: "random")
+            } catch {
+              print("Error fetching random scenes: \(error)")
+            }
+          }
+        },
+        onSceneAppear: { scene in
+          checkIfLoadMore(scene)
+        }
+      )
+    }
+    .searchable(text: $searchText, prompt: "Search scenes...")
+    .navigationTitle("Media Library")
+    .navigationBarTitleDisplayMode(.inline)
+    .onChange(of: searchText) { _, newValue in
+      handleSearchChange(newValue)
+    }
+    .refreshable {
+      await resetAndReload()
+    }
+    .toolbar {
+      ToolbarItemGroup(placement: .navigationBarTrailing) {
+        FilterMenuView(
+          currentFilter: $currentFilter,
+          onDefaultSelected: {
+            Task {
+              await resetAndReload()
+            }
           },
-          onSceneTap: { scene in
-            selectedScene = scene
-            showPlayer = true
+          onNewestSelected: {
+            Task {
+              do {
+                try await api.fetchScenes(page: 1, sort: "date")
+              } catch {
+                print("Error fetching newest scenes: \(error)")
+              }
+            }
+          },
+          onOCounterSelected: {
+            Task {
+              do {
+                try await api.fetchScenes(page: 1, sort: "o_counter")
+              } catch {
+                print("Error fetching scenes by o_counter: \(error)")
+              }
+            }
+          },
+          onRandomSelected: {
             Task {
               do {
                 try await api.fetchScenes(page: 1, sort: "random")
@@ -35,72 +84,21 @@ struct MediaLibraryView: View {
               }
             }
           },
-          onSceneAppear: { scene in
-            checkIfLoadMore(scene)
+          onReload: {
+            Task {
+              await resetAndReload()
+            }
           }
         )
       }
-      .searchable(text: $searchText)
-      .navigationTitle("Media Library")
-      .navigationBarTitleDisplayMode(.inline)
-      .onChange(of: searchText) { newValue in
-        handleSearchChange(newValue)
+    }
+    .task {
+      if api.scenes.isEmpty && searchText.isEmpty {
+        await loadInitialScenes()
       }
-      .refreshable {
-        await resetAndReload()
-      }
-      .toolbar {
-        ToolbarItemGroup(placement: .navigationBarTrailing) {
-          FilterMenuView(
-            currentFilter: $currentFilter,
-            onDefaultSelected: {
-              Task {
-                await resetAndReload()
-              }
-            },
-            onNewestSelected: {
-              Task {
-                do {
-                  try await api.fetchScenes(page: 1, sort: "date")
-                } catch {
-                  print("Error fetching newest scenes: \(error)")
-                }
-              }
-            },
-            onOCounterSelected: {
-              Task {
-                do {
-                  try await api.fetchScenes(page: 1, sort: "o_counter")
-                } catch {
-                  print("Error fetching scenes by o_counter: \(error)")
-                }
-              }
-            },
-            onRandomSelected: {
-              Task {
-                do {
-                  try await api.fetchScenes(page: 1, sort: "random")
-                } catch {
-                  print("Error fetching random scenes: \(error)")
-                }
-              }
-            },
-            onReload: {
-              Task {
-                await resetAndReload()
-              }
-            }
-          )
-        }
-      }
-      .task {
-        if api.scenes.isEmpty && searchText.isEmpty {
-          await loadInitialScenes()
-        }
-      }
-      .onAppear {
-        onAppear()
-      }
+    }
+    .onAppear {
+      onAppear()
     }
     .fullScreenCover(isPresented: $showPlayer) {
       if let scene = selectedScene {
@@ -306,7 +304,8 @@ struct MediaLibraryContentView: View {
             }
             .task {
               if let screenshotPath = scene.paths.screenshot,
-                let url = URL(string: screenshotPath) {
+                let url = URL(string: screenshotPath)
+              {
                 _ = try? await URLSession.shared.data(from: url)
               }
             }
@@ -406,6 +405,6 @@ struct MediaLibraryView_Previews: PreviewProvider {
   static var previews: some View {
     MediaLibraryView()
       .environmentObject(NavigationModel())
-      
+
   }
 }

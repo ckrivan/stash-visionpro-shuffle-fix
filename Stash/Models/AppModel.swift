@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 class AppModel: ObservableObject {
   static let shared = AppModel()
-  
+
   // API instance
   let api = StashAPI()
 
@@ -29,7 +29,7 @@ class AppModel: ObservableObject {
 
   // Navigation state
   @Published var navigationPath = NavigationPath()
-  
+
   // UI state
   @Published var isShowingImmersiveSpace = false
   @Published var isShowingPlayer = false
@@ -38,11 +38,11 @@ class AppModel: ObservableObject {
   @Published var isShowingMarkerWindow = false
   @Published var isShowingPerformerMarkers = false
   @Published var isShowingTaggedScenes = false
-  
+
   // Search state
   @Published var searchQuery: String = ""
   @Published var isSearching: Bool = false
-  
+
   // Marker shuffle state
   @Published var markerShuffleQueue: [SceneMarker] = []  // Small history for previous button
   @Published var shuffleTagIds: Set<String> = []  // Tags for filtering
@@ -52,7 +52,7 @@ class AppModel: ObservableObject {
   @Published var currentShuffleIndex: Int = 0
   @Published var shuffleTagName: String = ""
   @Published var shuffleFilterType: String = ""
-  
+
   // Tag configuration for shuffle mode - maintains equal distribution
   @Published var shuffleTagWeights: [String: Int] = [:] {
     didSet {
@@ -74,11 +74,12 @@ class AppModel: ObservableObject {
   public init() {
     // Load saved tag weights from UserDefaults
     if let weightData = UserDefaults.standard.data(forKey: "shuffleTagWeights"),
-       let weights = try? JSONDecoder().decode([String: Int].self, from: weightData) {
+      let weights = try? JSONDecoder().decode([String: Int].self, from: weightData)
+    {
       self.shuffleTagWeights = weights
       print("📊 Loaded saved tag weights: \(weights)")
     }
-    
+
     // Check if we have previously saved connection information
     let savedServerAddress = UserDefaults.standard.string(forKey: "serverAddress") ?? ""
     let savedApiKey = UserDefaults.standard.string(forKey: "apiKey") ?? ""
@@ -128,8 +129,12 @@ class AppModel: ObservableObject {
 
   @MainActor
   func openScene(_ scene: StashScene, startTime: Double? = nil) {
-    print("🎬 AppModel.openScene called for scene \(scene.id) with startTime: \(startTime?.description ?? "nil")")
-    print("🎬 Scene details - title: \(scene.title ?? "unknown"), stream path exists: \(scene.paths.stream != nil)")
+    print(
+      "🎬 AppModel.openScene called for scene \(scene.id) with startTime: \(startTime?.description ?? "nil")"
+    )
+    print(
+      "🎬 Scene details - title: \(scene.title ?? "unknown"), stream path exists: \(scene.paths.stream != nil)"
+    )
 
     // Use more aggressive audio cleanup to ensure no duplication
     GlobalVideoManager.shared.forceStopAllAudio()
@@ -182,15 +187,13 @@ class AppModel: ObservableObject {
     print("🎬 Set selectedScene to: \(scene.id)")
 
     // Show the player - short delay to ensure we have a clean state
-    Task {
+    Task { @MainActor in
       print("🎬 Starting task to show player...")
       // Very short delay to ensure state is updated
-      try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
-      await MainActor.run {
-        print("🎬 Setting isShowingPlayer = true")
-        isShowingPlayer = true
-        print("🎬 AppModel.openScene completed - player should now be visible for scene: \(scene.id)")
-      }
+      try? await Task.sleep(for: .milliseconds(100))
+      print("🎬 Setting isShowingPlayer = true")
+      isShowingPlayer = true
+      print("🎬 AppModel.openScene completed - player should now be visible for scene: \(scene.id)")
     }
   }
 
@@ -224,20 +227,21 @@ class AppModel: ObservableObject {
 
     print("🧹 App resources cleaned up due to app state change")
   }
-  
+
   // MARK: - Marker Shuffle Methods
-  
+
   /// Set configuration for a tag (currently tags get equal distribution)
   /// All tags receive equal representation in shuffle regardless of marker count
   func setTagWeight(tagId: String, weight: Int) {
     shuffleTagWeights[tagId] = weight
-    print("⚖️ Set config for tag \(tagId): \(weight) (equal distribution - all tags get same chance)")
+    print(
+      "⚖️ Set config for tag \(tagId): \(weight) (equal distribution - all tags get same chance)")
   }
-  
+
   /// Start marker shuffle for a specific tag
   func startMarkerShuffle(forTag tagId: String, tagName: String, displayedMarkers: [SceneMarker]) {
     print("🎲 Starting API-based marker shuffle for tag: \(tagName)")
-    
+
     Task { @MainActor in
       self.isMarkerShuffleMode = true
       self.shuffleTagName = tagName
@@ -247,12 +251,12 @@ class AppModel: ObservableObject {
       self.shuffleSearchQuery = ""
       self.markerShuffleQueue = []  // Clear history
     }
-    
+
     // Store shuffle mode in UserDefaults for player continuity
     UserDefaults.standard.set(true, forKey: "isMarkerShuffleMode")
     UserDefaults.standard.set(tagName, forKey: "shuffleTagName")
     UserDefaults.standard.set("tag", forKey: "shuffleFilterType")
-    
+
     // Fetch first random marker from API
     Task {
       if let randomMarker = await api.fetchRandomMarker(tagIds: [tagId]) {
@@ -265,12 +269,14 @@ class AppModel: ObservableObject {
       }
     }
   }
-  
+
   /// Start marker shuffle for multiple tags
-  func startMarkerShuffle(forMultipleTags tagIds: [String], tagNames: [String], displayedMarkers: [SceneMarker]) {
+  func startMarkerShuffle(
+    forMultipleTags tagIds: [String], tagNames: [String], displayedMarkers: [SceneMarker]
+  ) {
     let combinedTagName = tagNames.joined(separator: " + ")
     print("🎲 Starting API-based multi-tag shuffle for: \(combinedTagName)")
-    
+
     Task { @MainActor in
       self.isMarkerShuffleMode = true
       self.shuffleTagName = combinedTagName
@@ -280,12 +286,12 @@ class AppModel: ObservableObject {
       self.shuffleSearchQuery = ""
       self.markerShuffleQueue = []  // Clear history
     }
-    
+
     // Store shuffle mode in UserDefaults
     UserDefaults.standard.set(true, forKey: "isMarkerShuffleMode")
     UserDefaults.standard.set(combinedTagName, forKey: "shuffleTagName")
     UserDefaults.standard.set("multi-tag", forKey: "shuffleFilterType")
-    
+
     // Fetch first random marker from API
     Task {
       if let randomMarker = await api.fetchRandomMarker(tagIds: Set(tagIds)) {
@@ -298,11 +304,11 @@ class AppModel: ObservableObject {
       }
     }
   }
-  
+
   /// Start marker shuffle for search query
   func startMarkerShuffle(forSearchQuery query: String, displayedMarkers: [SceneMarker]) {
     print("🎲 Starting API-based marker shuffle for search: '\(query)'")
-    
+
     Task { @MainActor in
       self.isMarkerShuffleMode = true
       self.shuffleTagName = query.isEmpty ? "All Markers" : "Search: \(query)"
@@ -312,12 +318,12 @@ class AppModel: ObservableObject {
       self.shuffleSearchQuery = query
       self.markerShuffleQueue = []  // Clear history
     }
-    
+
     // Store shuffle mode in UserDefaults
     UserDefaults.standard.set(true, forKey: "isMarkerShuffleMode")
     UserDefaults.standard.set(self.shuffleTagName, forKey: "shuffleTagName")
     UserDefaults.standard.set("search", forKey: "shuffleFilterType")
-    
+
     // Fetch first random marker from API
     Task {
       if let randomMarker = await api.fetchRandomMarker(searchQuery: query.isEmpty ? nil : query) {
@@ -330,11 +336,13 @@ class AppModel: ObservableObject {
       }
     }
   }
-  
+
   /// Start marker shuffle for a specific performer
-  func startMarkerShuffle(forPerformer performer: StashScene.Performer, displayedMarkers: [SceneMarker]) {
+  func startMarkerShuffle(
+    forPerformer performer: StashScene.Performer, displayedMarkers: [SceneMarker]
+  ) {
     print("🎲 Starting API-based marker shuffle for performer: \(performer.name)")
-    
+
     Task { @MainActor in
       self.isMarkerShuffleMode = true
       self.shuffleTagName = "Performer: \(performer.name)"
@@ -345,12 +353,12 @@ class AppModel: ObservableObject {
       self.shufflePerformerId = performer.id  // Store performer ID for filtering
       self.markerShuffleQueue = []  // Clear history
     }
-    
+
     // Store shuffle mode in UserDefaults
     UserDefaults.standard.set(true, forKey: "isMarkerShuffleMode")
     UserDefaults.standard.set(self.shuffleTagName, forKey: "shuffleTagName")
     UserDefaults.standard.set("performer", forKey: "shuffleFilterType")
-    
+
     // Fetch first random marker from API using performer ID filter
     Task {
       if let randomMarker = await api.fetchRandomMarker(performerId: performer.id) {
@@ -363,22 +371,24 @@ class AppModel: ObservableObject {
       }
     }
   }
-  
+
   /// Navigate to a specific marker
   func navigateToMarker(_ marker: SceneMarker) {
-    print("🎬 navigateToMarker called for: \(marker.title) at \(marker.seconds) seconds (marker ID: \(marker.id))")
-    
+    print(
+      "🎬 navigateToMarker called for: \(marker.title) at \(marker.seconds) seconds (marker ID: \(marker.id))"
+    )
+
     // Clear any existing video state
     GlobalVideoManager.shared.forceStopAllAudio()
     print("🎬 Audio cleared, checking marker scene data...")
-    
+
     // We need to fetch the full scene data because marker scene data is limited
     guard let scene = marker.scene else {
       print("⚠️ No scene data available for marker - this is a critical error!")
       return
     }
     print("🎬 Marker has scene data: ID=\(scene.id), title=\(scene.title ?? "unknown")")
-    
+
     // Fetch full scene data from API
     Task {
       print("🎬 Starting async task to fetch full scene data for scene ID: \(scene.id)")
@@ -390,8 +400,10 @@ class AppModel: ObservableObject {
             print("🎬 On MainActor - calling openScene with startTime: \(marker.seconds)")
             self.openScene(fullScene, startTime: marker.seconds)
             self.isShowingPlayer = true
-            
-            print("🎬 Scene opened and player showing flag set - marker should be playing at \(marker.seconds) seconds")
+
+            print(
+              "🎬 Scene opened and player showing flag set - marker should be playing at \(marker.seconds) seconds"
+            )
           }
         } else {
           print("⚠️ fetchScene returned nil for scene ID: \(scene.id) - using fallback")
@@ -408,11 +420,11 @@ class AppModel: ObservableObject {
       }
     }
   }
-  
+
   /// Fallback navigation using limited marker data
   private func navigateToMarkerFallback(_ marker: SceneMarker) async {
     guard let scene = marker.scene else { return }
-    
+
     // Convert performer info to performers
     let performers: [StashScene.Performer]? = scene.performers?.map { performerInfo in
       StashScene.Performer(
@@ -442,7 +454,7 @@ class AppModel: ObservableObject {
         details: nil
       )
     }
-    
+
     // Create a basic StashScene from the marker's scene data
     let stashScene = StashScene(
       id: scene.id,
@@ -483,13 +495,13 @@ class AppModel: ObservableObject {
       createdAt: nil,
       updatedAt: nil
     )
-    
+
     await MainActor.run {
       // Open the scene at the marker's timestamp
       self.openScene(stashScene, startTime: marker.seconds)
     }
   }
-  
+
   /// Navigate to a specific scene
   func navigateToScene(_ scene: StashScene) {
     print("🎬 Navigating to scene: \(scene.title ?? scene.id)")
@@ -497,29 +509,31 @@ class AppModel: ObservableObject {
     currentScene = scene
     openScene(scene)
   }
-  
+
   /// Navigate to a specific performer
   func navigateToPerformer(_ performer: StashScene.Performer) {
     print("👤 Navigating to performer: \(performer.name)")
     selectedPerformer = performer
     isShowingPerformerWindow = true
   }
-  
+
   /// Move to the next marker in shuffle queue - fetches from API
   func nextMarkerInShuffle() {
     guard isMarkerShuffleMode else {
       print("⚠️ Not in marker shuffle mode")
       return
     }
-    
+
     print("🎲 nextMarkerInShuffle called - current shuffle mode: \(shuffleFilterType)")
-    print("🎲 Shuffle state - tagIds: \(shuffleTagIds), performerId: \(shufflePerformerId ?? "nil"), searchQuery: '\(shuffleSearchQuery)'")
-    
+    print(
+      "🎲 Shuffle state - tagIds: \(shuffleTagIds), performerId: \(shufflePerformerId ?? "nil"), searchQuery: '\(shuffleSearchQuery)'"
+    )
+
     // Fetch a new random marker from API based on current filters
     Task {
       print("🎲 Starting async task to fetch next marker...")
       let randomMarker: SceneMarker?
-      
+
       if let performerId = shufflePerformerId {
         // Performer-based shuffle
         print("🎲 Fetching performer-based shuffle for: \(performerId)")
@@ -528,7 +542,8 @@ class AppModel: ObservableObject {
         // Tag-based shuffle with equal distribution
         print("🎲 Fetching tag-based shuffle for: \(shuffleTagIds)")
         print("🎲 Using equal distribution for all tags")
-        randomMarker = await api.fetchRandomMarker(tagIds: shuffleTagIds, tagWeights: shuffleTagWeights)
+        randomMarker = await api.fetchRandomMarker(
+          tagIds: shuffleTagIds, tagWeights: shuffleTagWeights)
       } else if !shuffleSearchQuery.isEmpty {
         // Search-based shuffle
         print("🎲 Fetching search-based shuffle for: '\(shuffleSearchQuery)'")
@@ -538,9 +553,9 @@ class AppModel: ObservableObject {
         print("🎲 Fetching general shuffle (no filters)")
         randomMarker = await api.fetchRandomMarker()
       }
-      
+
       print("🎲 API call completed, randomMarker: \(randomMarker != nil ? "found" : "nil")")
-      
+
       if let marker = randomMarker {
         print("🎲 Got marker: \(marker.title) (ID: \(marker.id)) - updating UI on MainActor")
         await MainActor.run {
@@ -550,8 +565,9 @@ class AppModel: ObservableObject {
             self.markerShuffleQueue.removeFirst()
           }
           self.currentShuffleIndex = self.markerShuffleQueue.count - 1
-          
-          print("🎲 Next marker: \(marker.title) (history: \(self.markerShuffleQueue.count) markers)")
+
+          print(
+            "🎲 Next marker: \(marker.title) (history: \(self.markerShuffleQueue.count) markers)")
           print("🎲 Calling navigateToMarker...")
           self.navigateToMarker(marker)
         }
@@ -560,26 +576,28 @@ class AppModel: ObservableObject {
       }
     }
   }
-  
+
   /// Move to the previous marker in shuffle queue - uses history
   func previousMarkerInShuffle() {
     guard isMarkerShuffleMode && !markerShuffleQueue.isEmpty else {
       print("⚠️ Not in marker shuffle mode or history is empty")
       return
     }
-    
+
     // Navigate to previous in history if available
     if currentShuffleIndex > 0 {
       currentShuffleIndex -= 1
       let previousMarker = markerShuffleQueue[currentShuffleIndex]
-      
-      print("🎲 Previous marker from history: \(previousMarker.title) (index \(currentShuffleIndex) of \(markerShuffleQueue.count))")
+
+      print(
+        "🎲 Previous marker from history: \(previousMarker.title) (index \(currentShuffleIndex) of \(markerShuffleQueue.count))"
+      )
       navigateToMarker(previousMarker)
     } else {
       print("⚠️ Already at the beginning of marker history")
     }
   }
-  
+
   /// Stop marker shuffle mode
   func stopMarkerShuffle() {
     print("🛑 Stopping marker shuffle mode")
@@ -593,7 +611,7 @@ class AppModel: ObservableObject {
       self.shuffleSearchQuery = ""
       self.shufflePerformerId = nil
     }
-    
+
     // Clear from UserDefaults
     UserDefaults.standard.set(false, forKey: "isMarkerShuffleMode")
     UserDefaults.standard.removeObject(forKey: "shuffleTagName")
