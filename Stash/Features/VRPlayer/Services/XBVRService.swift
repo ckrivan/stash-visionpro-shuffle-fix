@@ -119,24 +119,30 @@ class XBVRService: ObservableObject {
       let decoder = JSONDecoder()
       let libraryResponse = try decoder.decode(DeoVRLibraryResponse.self, from: data)
 
+      print("📦 XBVR: Received \(libraryResponse.scenes.count) playlists")
+
       // Flatten all playlist items into a single array
       var allVideos: [XBVRVideo] = []
       for playlist in libraryResponse.scenes {
+        print("📦 XBVR: Playlist '\(playlist.name)' has \(playlist.list.count) videos")
         for item in playlist.list {
           // Extract scene ID from video_url (format: "/deovr/{scene-id}")
           let sceneId = item.video_url.replacingOccurrences(of: "/deovr/", with: "")
 
-          // Create XBVRVideo from list item
-          let video = try await self.fetchVideo(id: sceneId)
+          // Create lightweight XBVRVideo from list item (no full fetch yet)
+          let video = item.toXBVRVideo(baseURL: config.baseURL, sceneId: sceneId)
           allVideos.append(video)
         }
       }
+
+      print("📦 XBVR: Total videos collected: \(allVideos.count)")
 
       // Apply pagination
       let start = min(offset, allVideos.count)
       let end = min(offset + limit, allVideos.count)
       return Array(allVideos[start..<end])
     } catch {
+      print("❌ XBVR fetchVideos error: \(error)")
       throw XBVRError.decodingError(error)
     }
   }
@@ -274,6 +280,31 @@ private struct DeoVRListItem: Codable {
   let videoLength: Double?
   let thumbnailUrl: String?
   let video_url: String
+
+  /// Convert DeoVR list item to lightweight XBVRVideo
+  func toXBVRVideo(baseURL: String, sceneId: String) -> XBVRVideo {
+    // For list items, we create a placeholder stream URL
+    // The actual stream URL will be fetched when the user plays the video
+    let placeholderURL = URL(string: "\(baseURL)\(video_url)")!
+    let thumbURL = thumbnailUrl.flatMap { URL(string: $0) }
+
+    return XBVRVideo(
+      id: sceneId,
+      title: title,
+      duration: videoLength ?? 0,
+      resolution: CGSize(width: 1920, height: 1080),  // Default, updated when playing
+      videoType: .vr180,  // Default for XBVR content, updated when playing
+      stereoMode: .sideBySide,  // Default for XBVR content, updated when playing
+      streamURL: placeholderURL,  // Placeholder, updated when playing
+      thumbnailURL: thumbURL,
+      tags: nil,
+      performers: nil,
+      studio: nil,
+      filePath: nil,
+      dateAdded: nil,
+      fileSize: nil
+    )
+  }
 }
 
 /// DeoVR Scene Detail Response

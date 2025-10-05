@@ -61,15 +61,23 @@ class VRPlayerViewModel: ObservableObject {
 
     isLoading = true
     error = nil
-    currentVideo = video
-    videoFormat = video.detectedStereoMode
-    videoType = video.videoType
 
     do {
-      // DeoVR API provides stream URL directly in the video model
-      try await setupPlayer(with: video.streamURL)
+      // Fetch full video details from XBVR to get actual stream URL
+      print("🎬 Fetching full video details for: \(video.title)")
+      let fullVideo = try await xbvrService.fetchVideo(id: video.id)
+
+      currentVideo = fullVideo
+      videoFormat = fullVideo.detectedStereoMode
+      videoType = fullVideo.videoType
+
+      print("🎬 Stream URL: \(fullVideo.streamURL.absoluteString)")
+
+      // DeoVR API provides stream URL in the full scene response
+      try await setupPlayer(with: fullVideo.streamURL)
       isLoading = false
     } catch {
+      print("❌ Error loading video: \(error)")
       self.error = error
       isLoading = false
     }
