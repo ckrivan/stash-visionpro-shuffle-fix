@@ -80,6 +80,8 @@ struct MainVisionView: View {
           MarkersView()
         case .tags:
           TagSearchView()
+        case .history:
+          HistoryView()
         case .vr:
           XBVRLibraryView()
         case .settings:
@@ -100,6 +102,9 @@ struct MainVisionView: View {
           Text("Scene Detail: \(scene.title)")
         case .tag(let tag):
           TaggedScenesView(tag: tag)
+            .environmentObject(appModel)
+        case .tagMarkers(let tag):
+          TaggedMarkersView(tag: tag)
             .environmentObject(appModel)
         }
       }
@@ -122,6 +127,7 @@ struct MainVisionView: View {
       if let scene = appModel.selectedScene {
         VideoPlayerView(scene: scene)
           .environmentObject(navigationModel)
+          .environmentObject(appModel)
           .transition(.opacity.combined(with: .scale(scale: 0.95)))
           .onAppear {
             // Store observer tokens to clean them up later
@@ -174,6 +180,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
   case performers = "Performers"
   case markers = "Markers"
   case tags = "Tags"
+  case history = "History"
   case vr = "VR"
   case settings = "Settings"
 
@@ -185,6 +192,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     case .performers: return "person.2.fill"
     case .markers: return "bookmark.circle.fill"
     case .tags: return "tag.circle.fill"
+    case .history: return "clock.arrow.circlepath"
     case .vr: return "visionpro.fill"
     case .settings: return "gear.circle.fill"
     }

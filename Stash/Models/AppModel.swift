@@ -27,6 +27,9 @@ class AppModel: ObservableObject {
   @Published var selectedSceneStartTime: Double?
   @Published var videoStartTime: Double = 0
 
+  // Watch history (like iPadOS - shows recently watched scenes in dedicated view)
+  @Published var watchHistory: [StashScene] = []  // Track the sequence of scenes watched
+
   // Navigation state
   @Published var navigationPath = NavigationPath()
 
@@ -153,6 +156,31 @@ class AppModel: ObservableObject {
     // Update current scene after cleanup
     currentScene = scene
     print("🎬 Set currentScene to: \(scene.id)")
+
+    // Add to watch history (don't add duplicate if last scene is the same)
+    if watchHistory.last?.id != scene.id {
+      watchHistory.append(scene)
+      // Keep history to reasonable size (last 20 scenes)
+      if watchHistory.count > 20 {
+        watchHistory = Array(watchHistory.suffix(20))
+      }
+      print(
+        "🎯 HISTORY - Added to watch history: \(scene.title ?? scene.id) (history count: \(watchHistory.count))"
+      )
+    }
+
+    // Keep currentSceneIndex in sync - find this scene in currentScenes array
+    if !currentScenes.isEmpty {
+      if let index = currentScenes.firstIndex(where: { $0.id == scene.id }) {
+        currentSceneIndex = index
+        print("🎬 Updated currentSceneIndex to \(index)/\(currentScenes.count)")
+      } else {
+        print(
+          "⚠️ Scene '\(scene.id)' not found in currentScenes array (\(currentScenes.count) scenes)")
+      }
+    } else {
+      print("⚠️ currentScenes is empty - buttons won't show until setCurrentScene is called")
+    }
 
     // Set start time if provided
     if let time = startTime {
@@ -508,6 +536,158 @@ class AppModel: ObservableObject {
     selectedScene = scene
     currentScene = scene
     openScene(scene)
+  }
+
+  /// Navigate to next scene in current context with random timestamp
+  func nextScene() {
+    guard !currentScenes.isEmpty else {
+      print("⚠️ No scenes available for navigation")
+      return
+    }
+
+    // Move to next scene (wrap around to beginning)
+    let oldIndex = currentSceneIndex
+    currentSceneIndex = (currentSceneIndex + 1) % currentScenes.count
+    let nextScene = currentScenes[currentSceneIndex]
+
+    // Calculate random timestamp
+    let videoDuration = nextScene.files?.first?.duration ?? 0
+    var randomStartTime: Double = 0
+
+    if videoDuration > 0 {
+      // Random position between 30% and 75% of duration
+      let minOffset = videoDuration * 0.3
+      let maxOffset = videoDuration * 0.75
+      randomStartTime = Double.random(in: minOffset...maxOffset)
+    }
+
+    print(
+      "⏭️ Next: [\(oldIndex) → \(currentSceneIndex)/\(currentScenes.count)] '\(nextScene.title ?? nextScene.id)' @ \(Int(randomStartTime))s"
+    )
+    print("⏭️ Next scene ID: \(nextScene.id)")
+    print("⏭️ Video duration was: \(videoDuration) seconds")
+    print("⏭️ Calculated random start time: \(randomStartTime) seconds")
+
+    // Use notification-based switching for reliable start time
+    GlobalVideoManager.shared.stopAllPreviews()
+    print("⏭️ Stopped all previews")
+
+    // Reset state
+    UserDefaults.standard.removeObject(forKey: "last_video_start_time")
+    UserDefaults.standard.removeObject(forKey: "last_scene_id")
+    UserDefaults.standard.synchronize()
+
+    videoStartTime = 0
+    selectedSceneStartTime = nil
+
+    // Send pause notification
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+      print("⏭️ Sending pause notification")
+      NotificationCenter.default.post(
+        name: .videoPlayerShouldSwitch,
+        object: nil,
+        userInfo: ["pauseOnly": true]
+      )
+
+      // Send switch notification with start time
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        print("⏭️ Sending switch notification with startTime: \(randomStartTime)")
+        NotificationCenter.default.post(
+          name: .videoPlayerShouldSwitch,
+          object: nil,
+          userInfo: [
+            "sceneID": nextScene.id,
+            "startTime": randomStartTime,
+            "forcePlay": true,
+          ]
+        )
+
+        // Also call openScene as backup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+          print("⏭️ Setting UserDefaults and calling openScene with startTime: \(randomStartTime)")
+          UserDefaults.standard.set(randomStartTime, forKey: "last_video_start_time")
+          UserDefaults.standard.set(nextScene.id, forKey: "last_scene_id")
+          UserDefaults.standard.synchronize()
+
+          self.videoStartTime = randomStartTime
+          self.selectedSceneStartTime = randomStartTime
+          print("⏭️ About to call openScene with startTime: \(randomStartTime)")
+          self.openScene(nextScene, startTime: randomStartTime)
+        }
+      }
+    }
+  }
+
+  /// Navigate to previous scene in current context with random timestamp
+  func previousScene() {
+    guard !currentScenes.isEmpty else {
+      print("⚠️ No scenes available for navigation")
+      return
+    }
+
+    // Move to previous scene (wrap around to end)
+    let oldIndex = currentSceneIndex
+    currentSceneIndex = currentSceneIndex > 0 ? currentSceneIndex - 1 : currentScenes.count - 1
+    let prevScene = currentScenes[currentSceneIndex]
+
+    // Calculate random timestamp
+    let videoDuration = prevScene.files?.first?.duration ?? 0
+    var randomStartTime: Double = 0
+
+    if videoDuration > 0 {
+      // Random position between 30% and 75% of duration
+      let minOffset = videoDuration * 0.3
+      let maxOffset = videoDuration * 0.75
+      randomStartTime = Double.random(in: minOffset...maxOffset)
+    }
+
+    print(
+      "⏮️ Previous: [\(oldIndex) → \(currentSceneIndex)/\(currentScenes.count)] '\(prevScene.title ?? prevScene.id)' @ \(Int(randomStartTime))s"
+    )
+
+    // Use notification-based switching for reliable start time
+    GlobalVideoManager.shared.stopAllPreviews()
+
+    // Reset state
+    UserDefaults.standard.removeObject(forKey: "last_video_start_time")
+    UserDefaults.standard.removeObject(forKey: "last_scene_id")
+    UserDefaults.standard.synchronize()
+
+    videoStartTime = 0
+    selectedSceneStartTime = nil
+
+    // Send pause notification
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+      NotificationCenter.default.post(
+        name: .videoPlayerShouldSwitch,
+        object: nil,
+        userInfo: ["pauseOnly": true]
+      )
+
+      // Send switch notification with start time
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        NotificationCenter.default.post(
+          name: .videoPlayerShouldSwitch,
+          object: nil,
+          userInfo: [
+            "sceneID": prevScene.id,
+            "startTime": randomStartTime,
+            "forcePlay": true,
+          ]
+        )
+
+        // Also call openScene as backup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+          UserDefaults.standard.set(randomStartTime, forKey: "last_video_start_time")
+          UserDefaults.standard.set(prevScene.id, forKey: "last_scene_id")
+          UserDefaults.standard.synchronize()
+
+          self.videoStartTime = randomStartTime
+          self.selectedSceneStartTime = randomStartTime
+          self.openScene(prevScene, startTime: randomStartTime)
+        }
+      }
+    }
   }
 
   /// Navigate to a specific performer

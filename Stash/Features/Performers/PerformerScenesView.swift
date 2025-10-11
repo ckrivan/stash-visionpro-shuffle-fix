@@ -41,7 +41,8 @@ struct PerformerScenesView: View {
       VStack(spacing: 16) {
         // Performer header
         if let imagePath = performer.image_path,
-          let imageURL = URL(string: imagePath) {
+          let imageURL = URL(string: imagePath)
+        {
           AsyncImage(url: imageURL) { image in
             image
               .resizable()
@@ -98,7 +99,7 @@ struct PerformerScenesView: View {
           HStack(spacing: 12) {
             // Placeholder for sort options (could be added later)
             Spacer()
-            
+
             Button {
               startPerformerMarkerShuffle()
             } label: {
@@ -106,7 +107,7 @@ struct PerformerScenesView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(api.markers.isEmpty)
-            
+
             if !api.markers.isEmpty {
               Text("\(api.markers.count) markers")
                 .font(.caption)
@@ -134,7 +135,7 @@ struct PerformerScenesView: View {
                 .foregroundStyle(.secondary)
             } else {
               ForEach(api.scenes) { scene in
-                SceneRow(scene: scene)
+                SceneRow(scene: scene, allScenes: api.scenes)
                   .onAppear {
                     if scene == api.scenes.last && hasMoreContent && !isLoadingMore {
                       Task {
@@ -159,12 +160,15 @@ struct PerformerScenesView: View {
               Text("No markers found")
                 .foregroundStyle(.secondary)
             } else {
-              
+
               ForEach(api.markers) { marker in
                 MarkerRow(
                   marker: marker,
                   isPreviewVisible: true,
-                  onTagSelected: { _ in }  // No-op since we don't need tag filtering in this view
+                  onTagSelected: { tag in
+                    // Navigate to markers with this tag
+                    navigationModel.navigate(to: Route.tagMarkers(tag))
+                  }
                 )
                 .environmentObject(navigationModel)
               }
@@ -260,6 +264,8 @@ struct PerformerScenesView: View {
       await MainActor.run {
         print("🎬 Playing random scene from beginning: \(randomScene.id)")
 
+        // Set scene context for navigation
+        appModel.setCurrentScene(randomScene, in: api.scenes)
         // Open scene first, then set player flag
         appModel.openScene(randomScene)
         appModel.isShowingPlayer = true
@@ -467,7 +473,8 @@ struct PerformerScenesView: View {
       if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
         let data = json["data"] as? [String: Any],
         let findScenes = data["findScenes"] as? [String: Any],
-        let count = findScenes["count"] as? Int {
+        let count = findScenes["count"] as? Int
+      {
         await MainActor.run {
           api.totalSceneCount = count
           print("📊 Total scenes for performer: \(count)")
@@ -577,6 +584,8 @@ struct PerformerScenesView: View {
 
         // Open the scene with the random start time
         await MainActor.run {
+          // Set scene context for navigation
+          appModel.setCurrentScene(randomScene, in: api.scenes)
           // This will handle cleanup and setup of the player
           appModel.openScene(randomScene, startTime: startTime)
 
@@ -610,7 +619,8 @@ private struct PerformerHeader: View {
 
   var body: some View {
     if let imagePath = performer.image_path,
-      let imageURL = URL(string: imagePath) {
+      let imageURL = URL(string: imagePath)
+    {
       AsyncImage(url: imageURL) { image in
         image
           .resizable()
@@ -698,6 +708,7 @@ private struct ScenesTab: View {
 
 private struct MarkersTab: View {
   let api: StashAPI
+  @EnvironmentObject private var navigationModel: NavigationModel
 
   var body: some View {
     ScrollView {
@@ -713,9 +724,12 @@ private struct MarkersTab: View {
             MarkerRow(
               marker: marker,
               isPreviewVisible: true,
-              onTagSelected: { _ in }  // No-op since we don't need tag filtering in this view
+              onTagSelected: { tag in
+                // Navigate to markers with this tag
+                navigationModel.navigate(to: Route.tagMarkers(tag))
+              }
             )
-            .environmentObject(NavigationModel())
+            .environmentObject(navigationModel)
           }
         }
       }
@@ -729,6 +743,6 @@ struct PerformerScenesView_Previews: PreviewProvider {
     PerformerScenesView(performer: StashScene.Performer.example)
       .environmentObject(NavigationModel())
       .environmentObject(StashAPI())
-      
+
   }
 }

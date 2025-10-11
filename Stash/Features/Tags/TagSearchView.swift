@@ -16,7 +16,7 @@ struct TagSearchView: View {
       SearchBar(text: $searchText)
         .padding(.horizontal)
         .padding(.top)
-        .onChange(of: searchText) { newValue in
+        .onChange(of: searchText) { _, newValue in
           debounceSearch(query: newValue)
         }
 
@@ -81,20 +81,28 @@ struct TagSearchView: View {
   }
 
   private func debounceSearch(query: String) {
+    print("🏷️ debounceSearch called with query: '\(query)'")
     // Cancel any previous search task
     debounceTask?.cancel()
 
     // Create a new search task with delay
     debounceTask = Task {
+      print("🏷️ Debounce task started, sleeping 500ms...")
       try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms delay
 
-      guard !Task.isCancelled else { return }
+      guard !Task.isCancelled else {
+        print("🏷️ Debounce task was cancelled")
+        return
+      }
 
+      print("🏷️ Debounce complete, query: '\(query)'")
       if query.isEmpty {
         // Load popular tags if search is cleared
+        print("🏷️ Query empty, loading popular tags")
         await loadPopularTags()
       } else {
         // Search for tags
+        print("🏷️ Query not empty, searching for tags...")
         await searchTags(query: query)
       }
     }
@@ -103,19 +111,23 @@ struct TagSearchView: View {
   private func searchTags(query: String) async {
     guard !query.isEmpty else { return }
 
+    print("🏷️ TagSearchView.searchTags called with query: '\(query)'")
     await MainActor.run {
       isSearching = true
     }
 
     do {
+      print("🏷️ Calling api.searchTags...")
       let results = try await api.searchTags(query: query)
+      print("🏷️ API returned \(results.count) tags for query '\(query)'")
 
       await MainActor.run {
         tags = results
         isSearching = false
+        print("🏷️ Updated UI with \(results.count) tags")
       }
     } catch {
-      print("Error searching tags: \(error)")
+      print("❌ Error searching tags: \(error)")
       await MainActor.run {
         isSearching = false
       }

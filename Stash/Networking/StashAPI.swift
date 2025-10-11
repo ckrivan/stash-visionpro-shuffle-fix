@@ -224,7 +224,8 @@ class StashAPI: ObservableObject {
   // MARK: - Scene Methods
 
   func getStreamURL(forSceneID id: String, useHLS: Bool = true, startTime: Double? = nil) async
-    -> URL? {
+    -> URL?
+  {
     // First try to get the scene to check its format
     do {
       if let scene = try await fetchScene(byID: id) {
@@ -314,7 +315,8 @@ class StashAPI: ObservableObject {
   }
 
   func getStreamRequest(forSceneID id: String, useHLS: Bool = true, startTime: Double? = nil) async
-    -> URLRequest? {
+    -> URLRequest?
+  {
     print("🎬 Creating stream request for scene \(id), useHLS: \(useHLS)")
 
     // First try to get the scene to check if it's VR content and check codec
@@ -452,7 +454,8 @@ class StashAPI: ObservableObject {
   /// Get an optimized stream request based on current network conditions
   /// This method reduces handshakes and API calls when on VPN
   func getOptimizedStreamRequest(forSceneID id: String, startTime: Double? = nil) async
-    -> URLRequest? {
+    -> URLRequest?
+  {
     let networkMode = networkMonitor.networkMode
 
     print("🌐 Getting optimized stream for network mode: \(networkMode.description)")
@@ -467,7 +470,7 @@ class StashAPI: ObservableObject {
 
     // If no user preference, use network-optimized defaults
     print("🔧 No user HLS preference found, using network-optimized defaults")
-    
+
     switch networkMode {
     case .local:
       // Use full-featured approach for local network
@@ -488,7 +491,8 @@ class StashAPI: ObservableObject {
 
   /// VPN-optimized streaming request that minimizes API calls and uses single auth
   private func getVPNOptimizedRequest(forSceneID id: String, startTime: Double? = nil) async
-    -> URLRequest? {
+    -> URLRequest?
+  {
     print("🔧 Creating VPN-optimized request for scene \(id)")
 
     // Skip codec detection - default to direct streaming for VPN
@@ -523,7 +527,8 @@ class StashAPI: ObservableObject {
 
   /// Fallback method for VPN that uses HLS if direct streaming fails
   func getVPNHLSFallbackRequest(forSceneID id: String, startTime: Double? = nil) async
-    -> URLRequest? {
+    -> URLRequest?
+  {
     print("🔄 Creating VPN HLS fallback request for scene \(id)")
 
     // Use HLS with 720p transcoding for better VPN compatibility
@@ -588,7 +593,7 @@ class StashAPI: ObservableObject {
             "variables": {
                 "filter": {
                     "page": \(page),
-                    "per_page": 100,
+                    "per_page": 20,
                     "sort": "\(sortField)",
                     "direction": "DESC"
                 }
@@ -613,12 +618,10 @@ class StashAPI: ObservableObject {
       let (data, httpResponse) = try await URLSession.shared.data(for: request)
 
       if let httpResponse = httpResponse as? HTTPURLResponse {
-        print(" Response status: \(httpResponse.statusCode)")
+        print("📥 Scenes response status: \(httpResponse.statusCode)")
       }
 
-      if let responseString = String(data: data, encoding: .utf8) {
-        print(" Response data: \(responseString)")
-      }
+      // Removed full response logging for performance
 
       let scenesResponse = try JSONDecoder().decode(ScenesResponse.self, from: data)
 
@@ -681,14 +684,14 @@ class StashAPI: ObservableObject {
     let variables: [String: Any] = [
       "ids": [id],
       "delete_file": deleteFile,
-      "delete_generated": deleteGenerated
+      "delete_generated": deleteGenerated,
     ]
     // Construct JSON body
     let payload: [String: Any] = [
       "operationName": "ScenesDestroy",
       "variables": variables,
       "query":
-        "mutation ScenesDestroy($ids: [ID!]!, $delete_file: Boolean, $delete_generated: Boolean) { scenesDestroy(input: {ids: $ids, delete_file: $delete_file, delete_generated: $delete_generated}) }"
+        "mutation ScenesDestroy($ids: [ID!]!, $delete_file: Boolean, $delete_generated: Boolean) { scenesDestroy(input: {ids: $ids, delete_file: $delete_file, delete_generated: $delete_generated}) }",
     ]
     let bodyData = try JSONSerialization.data(withJSONObject: payload, options: [])
     guard let url = URL(string: "\(serverAddress)/graphql") else {
@@ -931,17 +934,21 @@ class StashAPI: ObservableObject {
       await MainActor.run {
         // Always set the total count for pagination
         self.totalMarkerCount = response.data.findSceneMarkers.count
-        
+
         if appendResults {
           // Filter out duplicates before appending
           let newMarkers = response.data.findSceneMarkers.scene_markers.filter { newMarker in
             !self.markers.contains { $0.id == newMarker.id }
           }
           self.markers.append(contentsOf: newMarkers)
-          print(" Added \(newMarkers.count) new markers (total: \(self.markers.count)/\(self.totalMarkerCount))")
+          print(
+            " Added \(newMarkers.count) new markers (total: \(self.markers.count)/\(self.totalMarkerCount))"
+          )
         } else {
           self.markers = response.data.findSceneMarkers.scene_markers
-          print(" Set \(response.data.findSceneMarkers.scene_markers.count) markers (total available: \(self.totalMarkerCount))")
+          print(
+            " Set \(response.data.findSceneMarkers.scene_markers.count) markers (total available: \(self.totalMarkerCount))"
+          )
         }
       }
     } catch {
@@ -1011,31 +1018,37 @@ class StashAPI: ObservableObject {
   }
 
   // MARK: - Tag Methods
-  
+
   /// Perform equal random selection from a set of tags
   /// Each tag gets equal probability regardless of marker count or weights
   /// This ensures fair representation of all tag groups
-  private func selectWeightedRandomTag(from tagIds: Set<String>, weights: [String: Int]) -> String? {
+  private func selectWeightedRandomTag(from tagIds: Set<String>, weights: [String: Int]) -> String?
+  {
     // Convert set to array for random selection
     let tagArray = Array(tagIds)
-    
+
     // If no tags, return nil
     guard !tagArray.isEmpty else { return nil }
-    
+
     // Equal probability selection - each tag has the same chance
     let randomIndex = Int.random(in: 0..<tagArray.count)
     return tagArray[randomIndex]
   }
-  
+
   /// Fetch a single random marker with optional tag filters or performer filter
-  func fetchRandomMarker(tagIds: Set<String>? = nil, searchQuery: String? = nil, performerId: String? = nil, tagWeights: [String: Int]? = nil) async -> SceneMarker? {
-    print("🎲 fetchRandomMarker called with tagIds: \(tagIds?.description ?? "nil"), searchQuery: \(searchQuery ?? "nil"), performerId: \(performerId ?? "nil")")
+  func fetchRandomMarker(
+    tagIds: Set<String>? = nil, searchQuery: String? = nil, performerId: String? = nil,
+    tagWeights: [String: Int]? = nil
+  ) async -> SceneMarker? {
+    print(
+      "🎲 fetchRandomMarker called with tagIds: \(tagIds?.description ?? "nil"), searchQuery: \(searchQuery ?? "nil"), performerId: \(performerId ?? "nil")"
+    )
     print("🎲 Tag weights: \(tagWeights?.description ?? "nil")")
-    
+
     // Generate a random seed for this request
     let randomSeed = Int.random(in: 0...999999)
     print("🎲 Using random seed: \(randomSeed)")
-    
+
     // If we have multiple tags, apply equal random selection
     var effectiveTagIds = tagIds
     if let tagIds = tagIds, tagIds.count > 1 {
@@ -1044,7 +1057,7 @@ class StashAPI: ObservableObject {
       for tagId in tagIds {
         print("   - Tag \(tagId): \(String(format: "%.1f", equalPercentage))% chance")
       }
-      
+
       // Perform equal random selection
       let selectedTagId = selectWeightedRandomTag(from: tagIds, weights: tagWeights ?? [:])
       if let selectedTag = selectedTagId {
@@ -1052,37 +1065,38 @@ class StashAPI: ObservableObject {
         print("🎲 Equal selection chose tag: \(selectedTag)")
       }
     }
-    
+
     // Build filters
     var sceneMarkerFilterParts: [String] = []
-    
+
     // Add tag filter if tags are provided
     if let effectiveTagIds = effectiveTagIds, !effectiveTagIds.isEmpty {
       let tagArray = effectiveTagIds.map { "\"\($0)\"" }.joined(separator: ", ")
-      sceneMarkerFilterParts.append("""
+      sceneMarkerFilterParts.append(
+        """
             "tags": {
                 "value": [\(tagArray)],
                 "modifier": "INCLUDES"
             }
         """)
     }
-    
+
     // Add performer filter if performer is provided
     if let performerId = performerId {
-      sceneMarkerFilterParts.append("""
+      sceneMarkerFilterParts.append(
+        """
             "performers": {
                 "value": ["\(performerId)"],
                 "modifier": "INCLUDES_ALL"
             }
         """)
     }
-    
-    
+
     // Build search query if provided
     let searchParam = searchQuery ?? ""
-    
+
     let graphQLQuery: String
-    
+
     if sceneMarkerFilterParts.isEmpty {
       // Query without scene_marker_filter
       graphQLQuery = """
@@ -1121,20 +1135,24 @@ class StashAPI: ObservableObject {
         }
         """
     }
-    
+
     do {
       print("🎲 Making GraphQL request for random marker...")
       let data = try await performGraphQLRequest(query: graphQLQuery)
       print("🎲 GraphQL request completed, decoding response...")
-      
+
       let decoder = JSONDecoder()
       let markersResponse = try decoder.decode(SceneMarkersResponse.self, from: data)
-      print("🎲 Response decoded - found \(markersResponse.data.findSceneMarkers.count) total markers, \(markersResponse.data.findSceneMarkers.scene_markers.count) returned")
-      
+      print(
+        "🎲 Response decoded - found \(markersResponse.data.findSceneMarkers.count) total markers, \(markersResponse.data.findSceneMarkers.scene_markers.count) returned"
+      )
+
       // Return the first (and only) marker
       let randomMarker = markersResponse.data.findSceneMarkers.scene_markers.first
       if let marker = randomMarker {
-        print("🎲 Successfully fetched random marker: \(marker.title) (ID: \(marker.id)) at \(marker.seconds)s")
+        print(
+          "🎲 Successfully fetched random marker: \(marker.title) (ID: \(marker.id)) at \(marker.seconds)s"
+        )
       } else {
         print("🎲 No random marker found in response")
       }
@@ -1219,7 +1237,9 @@ class StashAPI: ObservableObject {
   }
 
   /// Fetch markers matching ALL selected tags (multi-tag filtering, paginated)
-  func fetchMarkersByTags(tagIds: [String], page: Int = 1, perPage: Int = 25, appendResults: Bool = false) async {
+  func fetchMarkersByTags(
+    tagIds: [String], page: Int = 1, perPage: Int = 25, appendResults: Bool = false
+  ) async {
     isLoading = true
     let tagArray = tagIds.map { "\"\($0)\"" }.joined(separator: ", ")
     let query = """
@@ -1265,7 +1285,9 @@ class StashAPI: ObservableObject {
           self.markers = response.data.findSceneMarkers.scene_markers
         }
         self.totalMarkerCount = response.data.findSceneMarkers.count
-        print("✅ Loaded \(response.data.findSceneMarkers.scene_markers.count) markers for tags \(tagIds)")
+        print(
+          "✅ Loaded \(response.data.findSceneMarkers.scene_markers.count) markers for tags \(tagIds)"
+        )
       }
     } catch {
       print("❌ Error loading markers by tags: \(error)")
@@ -1278,18 +1300,20 @@ class StashAPI: ObservableObject {
     isLoading = true
     defer { isLoading = false }
 
+    // Use server-side search with the "q" parameter
     let graphQLQuery = """
       {
           "operationName": "FindTags",
           "variables": {
               "filter": {
                   "q": "\(query)",
-                  "per_page": 10,
+                  "per_page": 100,
                   "sort": "name",
                   "direction": "ASC"
-              }
+              },
+              "tag_filter": {}
           },
-          "query": "query FindTags($filter: FindFilterType) { findTags(filter: $filter) { count tags { id name scene_count image_count } } }"
+          "query": "query FindTags($filter: FindFilterType, $tag_filter: TagFilterType) { findTags(filter: $filter, tag_filter: $tag_filter) { count tags { id name scene_count } } }"
       }
       """
 
@@ -1300,11 +1324,45 @@ class StashAPI: ObservableObject {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.httpBody = graphQLQuery.data(using: .utf8)
 
     let (data, _) = try await URLSession.shared.data(for: request)
     let response = try JSONDecoder().decode(TagSearchResponse.self, from: data)
-    return response.data.findTags.tags
+
+    let tags = response.data.findTags.tags
+
+    // Sort tags to prioritize exact matches and relevance
+    let queryLower = query.lowercased()
+    let sortedTags = tags.sorted { tag1, tag2 in
+      let tag1Lower = tag1.name.lowercased()
+      let tag2Lower = tag2.name.lowercased()
+
+      // Exact match comes first
+      if tag1Lower == queryLower && tag2Lower != queryLower {
+        return true
+      }
+      if tag2Lower == queryLower && tag1Lower != queryLower {
+        return false
+      }
+
+      // Then tags that start with the query
+      if tag1Lower.hasPrefix(queryLower) && !tag2Lower.hasPrefix(queryLower) {
+        return true
+      }
+      if tag2Lower.hasPrefix(queryLower) && !tag1Lower.hasPrefix(queryLower) {
+        return false
+      }
+
+      // Finally, sort by scene count (most popular first)
+      return (tag1.scene_count ?? 0) > (tag2.scene_count ?? 0)
+    }
+
+    print("✅ Tag search for '\(query)' found \(sortedTags.count) matching tags")
+    print(
+      "🏷️ First 10 matches: \(sortedTags.prefix(10).map { "\($0.name) (\($0.scene_count ?? 0) scenes)" })"
+    )
+    return sortedTags
   }
 
   func createTag(name: String) async throws -> StashScene.Tag {
@@ -1319,7 +1377,7 @@ class StashAPI: ObservableObject {
                   "name": "\(name)"
               }
           },
-          "query": "mutation TagCreate($input: TagCreateInput!) { tagCreate(input: $input) { id name scene_count image_count } }"
+          "query": "mutation TagCreate($input: TagCreateInput!) { tagCreate(input: $input) { id name scene_count image_count scene_marker_count } }"
       }
       """
 
@@ -1330,6 +1388,7 @@ class StashAPI: ObservableObject {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.httpBody = query.data(using: .utf8)
 
     let (data, _) = try await URLSession.shared.data(for: request)
@@ -1340,7 +1399,8 @@ class StashAPI: ObservableObject {
   // MARK: - Helper Methods
 
   private func performGraphQLRequest<T: Decodable>(query: String, variables: [String: Any]? = nil)
-    async throws -> T {
+    async throws -> T
+  {
     guard let url = URL(string: "\(serverAddress)/graphql") else {
       throw URLError(.badURL)
     }
@@ -1385,7 +1445,8 @@ class StashAPI: ObservableObject {
 
   // Add a version of performGraphQLRequest that returns Data
   private func performGraphQLRequest(query: String, variables: [String: Any]? = nil) async throws
-    -> Data {
+    -> Data
+  {
     guard let url = URL(string: "\(serverAddress)/graphql") else {
       throw URLError(.badURL)
     }
@@ -1574,7 +1635,9 @@ class StashAPI: ObservableObject {
     isLoading = false
   }
 
-  func fetchPerformerMarkers(performerId: String, page: Int = 1, perPage: Int = 20) async throws -> [SceneMarker] {
+  func fetchPerformerMarkers(performerId: String, page: Int = 1, perPage: Int = 20) async throws
+    -> [SceneMarker]
+  {
     isLoading = true
 
     // Generate a random seed for consistent random sorting within this query
@@ -1643,10 +1706,10 @@ class StashAPI: ObservableObject {
           "✅ Loaded \(response.data.findSceneMarkers.scene_markers.count) markers for performer \(performerId) (page \(page))"
         )
       }
-      
+
       isLoading = false
       return response.data.findSceneMarkers.scene_markers
-      
+
     } catch {
       print("❌ Error loading performer markers: \(error)")
       if let decodingError = error as? DecodingError {
@@ -1809,16 +1872,16 @@ class StashAPI: ObservableObject {
           "query": "query FindTags($filter: FindFilterType) { findTags(filter: $filter) { count tags { id name scene_marker_count } } }"
       }
       """
-    
+
     struct MarkerTagsResponse: Decodable {
       let data: TagData
-      
+
       struct TagData: Decodable {
         let findTags: TagsPayload
-        
+
         struct TagsPayload: Decodable {
           let tags: [Tag]
-          
+
           struct Tag: Decodable {
             let id: String
             let name: String
@@ -1827,10 +1890,10 @@ class StashAPI: ObservableObject {
         }
       }
     }
-    
+
     let data = try await performGraphQLRequest(query: query)
     let response = try JSONDecoder().decode(MarkerTagsResponse.self, from: data)
-    
+
     // Filter to only include tags that have markers (scene_marker_count > 0)
     let markerTags = response.data.findTags.tags
       .filter { ($0.scene_marker_count ?? 0) > 0 }
@@ -1838,15 +1901,16 @@ class StashAPI: ObservableObject {
         StashScene.Tag(
           id: tag.id,
           name: tag.name,
-          scene_count: 0, // Not relevant for marker tags
-          image_count: 0  // Not relevant for marker tags
+          scene_count: 0,  // Not relevant for marker tags
+          image_count: 0,  // Not relevant for marker tags
+          scene_marker_count: tag.scene_marker_count
         )
       }
-    
+
     print("📊 Fetched \(markerTags.count) tags that are used by markers")
     return markerTags
   }
-  
+
   func fetchTags() async throws -> [StashScene.Tag] {
     isLoading = true
     defer { isLoading = false }
@@ -1872,10 +1936,11 @@ class StashAPI: ObservableObject {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.httpBody = graphQLQuery.data(using: .utf8)
 
     let (data, _) = try await URLSession.shared.data(for: request)
-    print("📥 Tag response data: \(String(data: data, encoding: .utf8) ?? "none")")
+    // Removed full response logging for performance
     let response = try JSONDecoder().decode(TagsResponse.self, from: data)
     return response.data.findTags.tags
   }
@@ -1921,7 +1986,7 @@ class StashAPI: ObservableObject {
             \(studioIDs != nil ? ", \"studios\": {\"value\": \(studioIDs!), \"modifier\": \"INCLUDES\"}" : "")
           }
         },
-        "query": "query FindTaggedScenes($filter: FindFilterType, $scene_filter: SceneFilterType) { findScenes(filter: $filter, scene_filter: $scene_filter) { count scenes { id title details date rating100 o_counter paths { screenshot stream preview } tags { id name } performers { id name image_path } studio { id name } files { width height video_codec } } } }"
+        "query": "query FindTaggedScenes($filter: FindFilterType, $scene_filter: SceneFilterType) { findScenes(filter: $filter, scene_filter: $scene_filter) { count scenes { id title details date rating100 o_counter paths { screenshot stream preview } tags { id name } performers { id name image_path } studio { id name } files { width height video_codec duration } } } }"
       }
       """
 
@@ -2169,7 +2234,7 @@ extension StashAPI {
   func searchMarkersBySuffix(suffix: String) async {
     print("🔍 Searching markers with suffix pattern: '_\(suffix)'")
     isLoading = true
-    
+
     let query = """
       {
           "operationName": "FindSceneMarkers",
@@ -2185,25 +2250,25 @@ extension StashAPI {
           "query": "query FindSceneMarkers($filter: FindFilterType) { findSceneMarkers(filter: $filter) { count scene_markers { id title seconds end_seconds stream preview screenshot scene { id title files { width height path } performers { id name image_path } } primary_tag { id name } tags { id name } } } }"
       }
       """
-    
+
     do {
       let data = try await executeGraphQLQuery(query)
-      
+
       struct MarkersResponseData: Decodable {
         let data: MarkerData
-        
+
         struct MarkerData: Decodable {
           let findSceneMarkers: MarkersPayload
-          
+
           struct MarkersPayload: Decodable {
             let count: Int
             let scene_markers: [SceneMarker]
           }
         }
       }
-      
+
       let response = try JSONDecoder().decode(MarkersResponseData.self, from: data)
-      
+
       // Filter markers where primary tag ends with the suffix
       let filteredMarkers = response.data.findSceneMarkers.scene_markers.filter { marker in
         if let primaryTag = marker.primary_tag {
@@ -2211,7 +2276,7 @@ extension StashAPI {
         }
         return false
       }
-      
+
       await MainActor.run {
         self.markers = filteredMarkers
         self.totalMarkerCount = filteredMarkers.count
@@ -2221,15 +2286,15 @@ extension StashAPI {
       print("❌ Error searching markers by suffix: \(error)")
       self.error = error
     }
-    
+
     isLoading = false
   }
-  
+
   /// Search markers by tag name
   func searchMarkersByTagName(tagName: String) async {
     print("🏷️ Searching markers by tag name: '\(tagName)'")
     isLoading = true
-    
+
     // First, find tags that match the name
     let searchQuery = """
       {
@@ -2246,20 +2311,20 @@ extension StashAPI {
           "query": "query FindTags($filter: FindFilterType) { findTags(filter: $filter) { count tags { id name scene_marker_count } } }"
       }
       """
-    
+
     do {
       let data = try await executeGraphQLQuery(searchQuery)
-      
+
       struct TagsResponseData: Decodable {
         let data: TagData
-        
+
         struct TagData: Decodable {
           let findTags: TagsPayload
-          
+
           struct TagsPayload: Decodable {
             let count: Int
             let tags: [Tag]
-            
+
             struct Tag: Decodable {
               let id: String
               let name: String
@@ -2268,11 +2333,13 @@ extension StashAPI {
           }
         }
       }
-      
+
       let response = try JSONDecoder().decode(TagsResponseData.self, from: data)
-      
+
       // Find exact match or closest match
-      if let matchingTag = response.data.findTags.tags.first(where: { $0.name.lowercased() == tagName.lowercased() }) {
+      if let matchingTag = response.data.findTags.tags.first(where: {
+        $0.name.lowercased() == tagName.lowercased()
+      }) {
         // Fetch markers for this tag
         await fetchMarkersByTag(tagId: matchingTag.id, page: 1, appendResults: false, perPage: 500)
       } else {
@@ -2287,15 +2354,15 @@ extension StashAPI {
       print("❌ Error searching markers by tag name: \(error)")
       self.error = error
     }
-    
+
     isLoading = false
   }
-  
+
   /// Update markers from search query
   func updateMarkersFromSearch(query: String, page: Int = 1, appendResults: Bool = false) async {
     print("🔍 Searching markers with query: '\(query)' (page \(page))")
     isLoading = true
-    
+
     let searchQuery = """
       {
           "operationName": "FindSceneMarkers",
@@ -2311,25 +2378,25 @@ extension StashAPI {
           "query": "query FindSceneMarkers($filter: FindFilterType) { findSceneMarkers(filter: $filter) { count scene_markers { id title seconds end_seconds stream preview screenshot scene { id title files { width height path } performers { id name image_path } } primary_tag { id name } tags { id name } } } }"
       }
       """
-    
+
     do {
       let data = try await executeGraphQLQuery(searchQuery)
-      
+
       struct MarkersResponseData: Decodable {
         let data: MarkerData
-        
+
         struct MarkerData: Decodable {
           let findSceneMarkers: MarkersPayload
-          
+
           struct MarkersPayload: Decodable {
             let count: Int
             let scene_markers: [SceneMarker]
           }
         }
       }
-      
+
       let response = try JSONDecoder().decode(MarkersResponseData.self, from: data)
-      
+
       await MainActor.run {
         if appendResults {
           self.markers.append(contentsOf: response.data.findSceneMarkers.scene_markers)
@@ -2337,20 +2404,24 @@ extension StashAPI {
           self.markers = response.data.findSceneMarkers.scene_markers
         }
         self.totalMarkerCount = response.data.findSceneMarkers.count
-        print("✅ Found \(response.data.findSceneMarkers.scene_markers.count) markers for query: '\(query)'")
+        print(
+          "✅ Found \(response.data.findSceneMarkers.scene_markers.count) markers for query: '\(query)'"
+        )
       }
     } catch {
       print("❌ Error searching markers: \(error)")
       self.error = error
     }
-    
+
     isLoading = false
   }
-  
+
   /// Update fetchMarkersByTag to support perPage parameter
-  func fetchMarkersByTag(tagId: String, page: Int = 1, appendResults: Bool = false, perPage: Int = 25) async {
+  func fetchMarkersByTag(
+    tagId: String, page: Int = 1, appendResults: Bool = false, perPage: Int = 25
+  ) async {
     isLoading = true
-    
+
     let query = """
       {
           "operationName": "FindSceneMarkers",
@@ -2372,25 +2443,25 @@ extension StashAPI {
           "query": "query FindSceneMarkers($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) { findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) { count scene_markers { id title seconds end_seconds stream preview screenshot scene { id title files { width height path } performers { id name image_path } } primary_tag { id name } tags { id name } } } }"
       }
       """
-    
+
     do {
       let data = try await executeGraphQLQuery(query)
-      
+
       struct MarkersResponseData: Decodable {
         let data: MarkerData
-        
+
         struct MarkerData: Decodable {
           let findSceneMarkers: MarkersPayload
-          
+
           struct MarkersPayload: Decodable {
             let count: Int
             let scene_markers: [SceneMarker]
           }
         }
       }
-      
+
       let response = try JSONDecoder().decode(MarkersResponseData.self, from: data)
-      
+
       await MainActor.run {
         if appendResults {
           self.markers.append(contentsOf: response.data.findSceneMarkers.scene_markers)
@@ -2398,13 +2469,14 @@ extension StashAPI {
           self.markers = response.data.findSceneMarkers.scene_markers
         }
         self.totalMarkerCount = response.data.findSceneMarkers.count
-        print("✅ Loaded \(response.data.findSceneMarkers.scene_markers.count) markers for tag \(tagId)")
+        print(
+          "✅ Loaded \(response.data.findSceneMarkers.scene_markers.count) markers for tag \(tagId)")
       }
     } catch {
       print("❌ Error loading markers by tag: \(error)")
       self.error = error
     }
-    
+
     isLoading = false
   }
 }

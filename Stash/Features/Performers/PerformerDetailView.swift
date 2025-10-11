@@ -3,6 +3,7 @@ import SwiftUI
 struct PerformerDetailView: View {
   let performer: StashScene.Performer
   @EnvironmentObject private var api: StashAPI
+  @EnvironmentObject private var navigationModel: NavigationModel
   @State private var selectedTab = 0
   @State private var currentPage = 1
   @State private var isLoadingMore = false
@@ -28,7 +29,8 @@ struct PerformerDetailView: View {
   private var performerHeader: some View {
     VStack(spacing: 20) {
       if let imagePath = performer.image_path,
-        let imageURL = URL(string: imagePath) {
+        let imageURL = URL(string: imagePath)
+      {
         AsyncImage(url: imageURL) { image in
           image
             .resizable()
@@ -69,7 +71,7 @@ struct PerformerDetailView: View {
   private var scenesGrid: some View {
     LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))], spacing: 16) {
       ForEach(api.scenes) { scene in
-        SceneRow(scene: scene)
+        SceneRow(scene: scene, allScenes: api.scenes)
           .onAppear {
             if scene == api.scenes.last && !isLoadingMore && hasMorePages {
               Task {
@@ -88,9 +90,12 @@ struct PerformerDetailView: View {
         MarkerRow(
           marker: marker,
           isPreviewVisible: visibleMarkers.contains(marker.id),
-          onTagSelected: { _ in }  // No-op since we don't need tag filtering in this view
+          onTagSelected: { tag in
+            // Navigate to markers with this tag
+            navigationModel.navigate(to: Route.tagMarkers(tag))
+          }
         )
-        .environmentObject(NavigationModel())
+        .environmentObject(navigationModel)
         .onAppear {
           if visibleMarkers.count < 5 {
             visibleMarkers.insert(marker.id)

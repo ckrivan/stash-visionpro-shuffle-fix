@@ -75,41 +75,135 @@ struct TaggedScenesView: View {
   private func randomJump() {
     guard !api.scenes.isEmpty else { return }
 
-    // Pick a random scene from the current tag's scenes
-    if let randomScene = api.scenes.randomElement() {
-      // Get a random start time for this scene
-      let videoDuration = randomScene.files?.first?.duration ?? 0
-      var randomStartTime: Double = 0
+    print("🎲 TaggedScenesView.randomJump - Starting random jump for tag: \(tag.name)")
+    print("🎲 Currently loaded scenes: \(api.scenes.count) out of \(totalScenes) total")
 
-      if videoDuration > 0 {
-        // Calculate a safe random range (between 25% and 75% of duration)
-        let minOffset = min(5 * 60, videoDuration * 0.25)
-        let maxOffset = videoDuration * 0.75
+    // If we haven't loaded all scenes yet, load them all first
+    if api.scenes.count < totalScenes {
+      print("🎲 Loading all \(totalScenes) scenes before shuffling...")
 
-        if maxOffset > minOffset {
-          randomStartTime = Double.random(in: minOffset...maxOffset)
-        } else {
-          // For very short videos
-          randomStartTime = videoDuration > 300 ? 300 : 0
+      Task {
+        // Load all remaining pages
+        while api.scenes.count < totalScenes && hasMorePages {
+          await loadMore()
         }
-      }
 
-      // IMPORTANT: Set the time in UserDefaults BEFORE opening the scene
-      // This is necessary for the VideoPlayerView to properly recognize the start time
+        print("🎲 Finished loading all scenes: \(api.scenes.count) total")
+
+        // Now do the random jump with all scenes loaded
+        await performRandomJump()
+      }
+      return
+    }
+
+    // We already have all scenes loaded, do the jump immediately
+    Task {
+      await performRandomJump()
+    }
+  }
+
+  private func performRandomJump() async {
+    print("🎲 performRandomJump with \(api.scenes.count) scenes available")
+    print("🎲 First 5 scene titles: \(api.scenes.prefix(5).map { $0.title ?? "untitled" })")
+
+    // Pick a random scene from the current tag's scenes
+    guard let randomScene = api.scenes.randomElement() else {
+      print("❌ Failed to get random scene")
+      return
+    }
+
+    print("🎲 Selected random scene: \(randomScene.title ?? randomScene.id) (ID: \(randomScene.id))")
+
+    // Calculate random start time for this scene
+    let videoDuration = randomScene.files?.first?.duration ?? 0
+    print(
+      "🎲 Video duration: \(videoDuration) seconds (from files: \(randomScene.files?.count ?? 0))")
+
+    let randomStartTime: Double
+
+    if videoDuration > 0 {
+      // Calculate random position (30% to 70% of duration)
+      let minOffset = videoDuration * 0.3
+      let maxOffset = videoDuration * 0.7
+      randomStartTime = Double.random(in: minOffset...maxOffset)
+      print("🎲 Random range: \(minOffset) to \(maxOffset)")
+    } else {
+      // Default to 2 minutes in if we can't determine duration
+      randomStartTime = 120
+      print("⚠️ No duration found, defaulting to 120 seconds")
+    }
+
+    print("🎲 ✅ Final calculated random start time: \(randomStartTime) seconds")
+
+    await MainActor.run {
+      // Stop ANY video preview that might be playing
+      GlobalVideoManager.shared.stopAllPreviews()
+
+      // COMPLETELY RESET UserDefaults and model state
+      UserDefaults.standard.removeObject(forKey: "last_video_start_time")
+      UserDefaults.standard.removeObject(forKey: "last_scene_id")
+      UserDefaults.standard.synchronize()
+
+      // Clean model state
+      self.appModel.videoStartTime = 0
+      self.appModel.selectedSceneStartTime = nil
+    }
+
+    // Wait for complete reset
+    try? await Task.sleep(nanoseconds: 200_000_000)  // 0.2 seconds
+
+    await MainActor.run {
+      print("🎲 Sending notification for scene \(randomScene.id) at time \(randomStartTime)")
+
+      // First pause any current video
+      NotificationCenter.default.post(
+        name: .videoPlayerShouldSwitch,
+        object: nil,
+        userInfo: ["pauseOnly": true]
+      )
+    }
+
+    // Wait before sending switch notification
+    try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1 seconds
+
+    await MainActor.run {
+      NotificationCenter.default.post(
+        name: .videoPlayerShouldSwitch,
+        object: nil,
+        userInfo: [
+          "sceneID": randomScene.id,
+          "startTime": randomStartTime,
+          "forcePlay": true,
+        ]
+      )
+    }
+
+    // Wait before opening scene
+    try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1 seconds
+
+    await MainActor.run {
+      // Set fresh UserDefaults values
       UserDefaults.standard.set(randomStartTime, forKey: "last_video_start_time")
       UserDefaults.standard.set(randomScene.id, forKey: "last_scene_id")
       UserDefaults.standard.synchronize()
 
-      // Also set in the app model for redundancy
-      appModel.videoStartTime = randomStartTime
-      appModel.selectedSceneStartTime = randomStartTime
+      self.appModel.videoStartTime = randomStartTime
+      self.appModel.selectedSceneStartTime = randomStartTime
 
-      print("🎲 Random jump to scene \(randomScene.id) at time \(randomStartTime)")
+      // IMPORTANT: Set the current scenes list BEFORE opening the scene
+      // This ensures next/previous navigation works correctly within this tag
+      print(
+        "🎲 Setting currentScenes to tag '\(self.tag.name)' scenes: \(self.api.scenes.count) total")
+      self.appModel.currentScenes = self.api.scenes
+      self.appModel.setCurrentScene(randomScene, in: self.api.scenes)
 
-      // Small delay to ensure settings are saved before opening the scene
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-        appModel.openScene(randomScene, startTime: randomStartTime)
-      }
+      print(
+        "🎲 currentSceneIndex: \(self.appModel.currentSceneIndex)/\(self.appModel.currentScenes.count)"
+      )
+
+      self.appModel.openScene(randomScene, startTime: randomStartTime)
+
+      print("🎲 Random jump complete - scene should start at \(randomStartTime)")
     }
   }
 
@@ -256,7 +350,7 @@ struct TagScenesContent: View {
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))], spacing: 16) {
         ForEach(scenes) { scene in
           // Use SceneRow with debugging modifier
-          DirectSceneRow(scene: scene, onDelete: onDelete)
+          DirectSceneRow(scene: scene, allScenes: scenes, onDelete: onDelete)
             .onAppear {
               if scene == scenes.last {
                 onLastSceneAppear()
@@ -278,6 +372,7 @@ struct TagScenesContent: View {
 // Direct implementation of SceneRow for tag view that preserves random jump functionality
 struct DirectSceneRow: View {
   let scene: StashScene
+  let allScenes: [StashScene]
   let onDelete: (String) -> Void
   @State private var isShuffling = false
   @State private var isPreviewPlaying = false
@@ -298,7 +393,8 @@ struct DirectSceneRow: View {
       ZStack {
         // Thumbnail image
         if let screenshot = scene.paths.screenshot,
-          let screenshotURL = URL(string: screenshot) {
+          let screenshotURL = URL(string: screenshot)
+        {
           AsyncImage(url: screenshotURL) { image in
             image.resizable()
               .aspectRatio(contentMode: .fill)
@@ -389,6 +485,8 @@ struct DirectSceneRow: View {
       VStack(alignment: .leading, spacing: 8) {
         // Title - now plays video when tapped
         Button(action: {
+          // Set scene context for navigation
+          appModel.setCurrentScene(scene, in: allScenes)
           // Use standard opening without the full reset to keep last position
           appModel.openScene(scene)
         }) {
@@ -400,7 +498,8 @@ struct DirectSceneRow: View {
 
         // Performers
         if let performers = scene.performers,
-          !performers.isEmpty {
+          !performers.isEmpty
+        {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
               ForEach(performers) { performer in
@@ -421,7 +520,8 @@ struct DirectSceneRow: View {
 
         // Tags
         if let tags = scene.tags,
-          !tags.isEmpty {
+          !tags.isEmpty
+        {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
               ForEach(tags) { tag in
@@ -470,7 +570,7 @@ struct DirectSceneRow: View {
       "Accept-Encoding": "identity",
       "Accept-Language": "en-US,en;q=0.9",
       "User-Agent": "Mozilla/5.0",
-      "Connection": "keep-alive"
+      "Connection": "keep-alive",
     ]
 
     let asset = AVURLAsset(
@@ -585,7 +685,7 @@ struct DirectSceneRow: View {
           userInfo: [
             "sceneID": self.scene.id,
             "startTime": randomStartTime,
-            "forcePlay": true
+            "forcePlay": true,
           ]
         )
 
@@ -599,6 +699,7 @@ struct DirectSceneRow: View {
           // Set app model values and open scene
           self.appModel.videoStartTime = randomStartTime
           self.appModel.selectedSceneStartTime = randomStartTime
+          self.appModel.setCurrentScene(self.scene, in: self.allScenes)
           self.appModel.openScene(self.scene, startTime: randomStartTime)
 
           // Reset flag

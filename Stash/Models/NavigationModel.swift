@@ -7,6 +7,7 @@ enum Route: Hashable {
   case marker(SceneMarker)
   case scene(StashScene)
   case tag(StashScene.Tag)
+  case tagMarkers(StashScene.Tag)
 }
 
 class NavigationModel: ObservableObject {

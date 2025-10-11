@@ -70,7 +70,7 @@ struct PerformerWindow: View {
       } else {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))], spacing: 16) {
           ForEach(api.scenes) { scene in
-            SceneRow(scene: scene)
+            SceneRow(scene: scene, allScenes: api.scenes)
           }
         }
         .padding()
@@ -90,7 +90,10 @@ struct PerformerWindow: View {
             MarkerRow(
               marker: marker,
               isPreviewVisible: true,
-              onTagSelected: { _ in }  // No-op since we don't need tag filtering in this view
+              onTagSelected: { tag in
+                // Navigate to markers with this tag
+                navigationModel.navigate(to: Route.tagMarkers(tag))
+              }
             )
             .environmentObject(navigationModel)
           }
