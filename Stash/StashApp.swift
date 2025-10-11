@@ -53,6 +53,18 @@ struct StashApp: App {
   @StateObject private var navigationModel = NavigationModel()
   @StateObject private var xbvrPlayerState = XBVRPlayerState()
 
+  init() {
+    // Configure URLCache for better image/video caching performance
+    // 50MB memory cache, 500MB disk cache (up from default 5MB/20MB)
+    let memoryCapacity = 50 * 1024 * 1024  // 50MB
+    let diskCapacity = 500 * 1024 * 1024  // 500MB
+    let urlCache = URLCache(memoryCapacity: memoryCapacity, diskCapacity: diskCapacity)
+    URLCache.shared = urlCache
+    print(
+      "📦 URLCache configured: \(memoryCapacity / 1024 / 1024)MB memory, \(diskCapacity / 1024 / 1024)MB disk"
+    )
+  }
+
   var body: some SwiftUI.Scene {
     WindowGroup {
       ContentView()

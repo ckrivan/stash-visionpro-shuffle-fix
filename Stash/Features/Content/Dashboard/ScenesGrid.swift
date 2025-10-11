@@ -15,21 +15,33 @@ struct ScenesGrid: View {
   @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
   @EnvironmentObject private var appModel: AppModel
   @State private var isTransitioning = false
+  @State private var visibleScenes: Set<String> = []
 
   var body: some View {
     ScrollView {
       LazyVGrid(columns: columns, spacing: 16) {
         ForEach(scenes) { scene in
-          SceneRow(scene: scene)
-            .frame(maxWidth: .infinity)
-            .hoverEffect(.lift)
-            .contentShape(.interaction, RoundedRectangle(cornerRadius: 16))
-            .onTapGesture {
-              handleSceneSelection(scene)
+          SceneRow(
+            scene: scene,
+            allScenes: scenes,
+            isPreviewEnabled: visibleScenes.contains(scene.id)
+          )
+          .frame(maxWidth: .infinity)
+          .hoverEffect(.lift)
+          .contentShape(.interaction, RoundedRectangle(cornerRadius: 16))
+          .onTapGesture {
+            handleSceneSelection(scene)
+          }
+          .onAppear {
+            // Limit visible previews to 15 for performance
+            if visibleScenes.count < 15 {
+              visibleScenes.insert(scene.id)
             }
-            .onAppear {
-              onSceneAppear(scene)
-            }
+            onSceneAppear(scene)
+          }
+          .onDisappear {
+            visibleScenes.remove(scene.id)
+          }
         }
 
         if isLoadingMore {

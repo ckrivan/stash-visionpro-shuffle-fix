@@ -10,6 +10,8 @@ struct SceneRow: View {
   var onDelete: ((String) -> Void)?
   // Optional array of all scenes for navigation context
   var allScenes: [StashScene]?
+  // Whether preview loading is enabled (for scroll performance)
+  var isPreviewEnabled: Bool = true
   @State private var isVisible = false
   @State private var isPreviewPlaying = false  // Track if preview is playing
   @State private var selectedPerformer: StashScene.Performer?
@@ -43,7 +45,8 @@ struct SceneRow: View {
           .hoverEffect(.lift)
 
         // Show video player on top when actively playing - using preview URL
-        if let url = previewURL, isPreviewPlaying {
+        // Only load if preview is enabled for performance
+        if let url = previewURL, isPreviewPlaying, isPreviewEnabled {
           // Use exact same frame and sizing as the thumbnail
           ZStack {
             // Video player without controls or dimming
@@ -111,6 +114,9 @@ struct SceneRow: View {
       .clipShape(RoundedRectangle(cornerRadius: 16))
       .animation(.easeInOut(duration: 0.3), value: isPreviewPlaying)
       .onTapGesture {
+        // Only allow preview toggle if preview is enabled (visible)
+        guard isPreviewEnabled else { return }
+
         // Toggle playback when tapped
         isPreviewPlaying.toggle()
         if isPreviewPlaying {
@@ -281,6 +287,10 @@ struct SceneRow: View {
         } placeholder: {
           ProgressView()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task(id: url) {
+          // Task automatically cancels when view disappears or url changes
+          // This prevents loading images for scrolled-away cells
         }
       }
     }

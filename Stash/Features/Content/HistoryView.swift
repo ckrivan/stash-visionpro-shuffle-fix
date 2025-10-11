@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HistoryView: View {
   @EnvironmentObject private var appModel: AppModel
+  @State private var visibleScenes: Set<String> = []
 
   private let columns = [
     GridItem(.adaptive(minimum: 350, maximum: 500), spacing: 20)
@@ -56,7 +57,20 @@ struct HistoryView: View {
           // History grid
           LazyVGrid(columns: columns, spacing: 20) {
             ForEach(appModel.watchHistory.reversed()) { scene in
-              SceneRow(scene: scene, allScenes: appModel.watchHistory)
+              SceneRow(
+                scene: scene,
+                allScenes: appModel.watchHistory,
+                isPreviewEnabled: visibleScenes.contains(scene.id)
+              )
+              .onAppear {
+                // Limit visible previews to 15 for performance
+                if visibleScenes.count < 15 {
+                  visibleScenes.insert(scene.id)
+                }
+              }
+              .onDisappear {
+                visibleScenes.remove(scene.id)
+              }
             }
           }
           .padding(.horizontal)
