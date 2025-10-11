@@ -6,16 +6,16 @@ struct TagSelectorSheet: View {
   @Binding var selectedTagId: String?
   @Binding var isMultiTagMode: Bool
   let onSelectionChanged: () -> Void
-  
+
   @Environment(\.dismiss) private var dismiss
   @State private var searchText = ""
   @State private var allMarkerTags: [StashScene.Tag] = []
   @State private var isLoadingTags = false
   @StateObject private var api = StashAPI()
-  
+
   private var filteredTags: [StashScene.Tag] {
     let tagsToFilter = allMarkerTags.isEmpty ? availableTags : allMarkerTags
-    
+
     if searchText.isEmpty {
       return tagsToFilter
     } else {
@@ -24,9 +24,9 @@ struct TagSelectorSheet: View {
       }
     }
   }
-  
+
   var body: some View {
-    NavigationView {
+    NavigationStack {
       VStack(spacing: 0) {
         // Search bar
         HStack {
@@ -36,7 +36,7 @@ struct TagSelectorSheet: View {
         }
         .padding()
         .background(.ultraThinMaterial)
-        
+
         // Content
         if isLoadingTags {
           VStack(spacing: 16) {
@@ -64,9 +64,9 @@ struct TagSelectorSheet: View {
                   HStack {
                     Text(tag.name)
                       .foregroundColor(.primary)
-                    
+
                     Spacer()
-                    
+
                     if isMultiTagMode {
                       if selectedTagIds.contains(tag.id) {
                         Image(systemName: "checkmark.circle.fill")
@@ -91,9 +91,9 @@ struct TagSelectorSheet: View {
                   .textCase(nil)
                   .font(.subheadline)
                   .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
+
                 if isMultiTagMode && !selectedTagIds.isEmpty {
                   Button("Clear All") {
                     selectedTagIds.removeAll()
@@ -115,14 +115,14 @@ struct TagSelectorSheet: View {
             dismiss()
           }
         }
-        
+
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") {
             dismiss()
             onSelectionChanged()
           }
         }
-        
+
         ToolbarItem(placement: .primaryAction) {
           Button(action: {
             isMultiTagMode.toggle()
@@ -158,10 +158,10 @@ struct TagSelectorSheet: View {
       await loadAllMarkerTags()
     }
   }
-  
+
   private func loadAllMarkerTags() async {
     isLoadingTags = true
-    
+
     do {
       let markerTags = try await api.fetchMarkerTags()
       await MainActor.run {
@@ -175,10 +175,10 @@ struct TagSelectorSheet: View {
         self.allMarkerTags = []
       }
     }
-    
+
     isLoadingTags = false
   }
-  
+
   private func selectTag(_ tag: StashScene.Tag) {
     if isMultiTagMode {
       if selectedTagIds.contains(tag.id) {

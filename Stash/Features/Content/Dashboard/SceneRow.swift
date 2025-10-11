@@ -8,6 +8,8 @@ struct SceneRow: View {
   var onTagSelected: ((StashScene.Tag) -> Void)?
   // Closure called when the scene is deleted
   var onDelete: ((String) -> Void)?
+  // Optional array of all scenes for navigation context
+  var allScenes: [StashScene]?
   @State private var isVisible = false
   @State private var isPreviewPlaying = false  // Track if preview is playing
   @State private var selectedPerformer: StashScene.Performer?
@@ -105,6 +107,8 @@ struct SceneRow: View {
           }
         }
       }
+      .aspectRatio(16 / 9, contentMode: .fit)
+      .clipShape(RoundedRectangle(cornerRadius: 16))
       .animation(.easeInOut(duration: 0.3), value: isPreviewPlaying)
       .onTapGesture {
         // Toggle playback when tapped
@@ -127,6 +131,10 @@ struct SceneRow: View {
         }
       }
       .onLongPressGesture {
+        // Set scene context for navigation if available
+        if let scenes = allScenes {
+          appModel.setCurrentScene(scene, in: scenes)
+        }
         // Enter full screen on long press of the thumbnail area
         isFullScreen = true
       }
@@ -134,6 +142,10 @@ struct SceneRow: View {
       VStack(alignment: .leading, spacing: 8) {
         // Title
         Button(action: {
+          // Set scene context for navigation if available
+          if let scenes = allScenes {
+            appModel.setCurrentScene(scene, in: scenes)
+          }
           isFullScreen = true
         }) {
           Text(scene.title ?? "Untitled")
@@ -212,9 +224,19 @@ struct SceneRow: View {
         previewLoaded = false
       }
     }
+    .onChange(of: appModel.isShowingPlayer) { _, isShowing in
+      // Safety net: Stop preview when full-screen player opens
+      if isShowing && isPreviewPlaying {
+        print("🔇 SceneRow: Full-screen player opened - cleaning up preview for scene \(scene.id)")
+        cleanupPlayer()
+        isPreviewPlaying = false
+        previewLoaded = false
+      }
+    }
     .fullScreenCover(isPresented: $isFullScreen) {
       VideoPlayerView(scene: scene)
         .environmentObject(navigationModel)
+        .environmentObject(appModel)
     }
     .alert("Delete Scene?", isPresented: $showDeleteAlert) {
       Button("Delete", role: .destructive) {
@@ -399,6 +421,13 @@ struct SceneRow: View {
         }
 
         // No delays at all!
+
+        // Set scene context for navigation if available
+        await MainActor.run {
+          if let scenes = allScenes {
+            appModel.setCurrentScene(scene, in: scenes)
+          }
+        }
 
         // Just show the new player - this is the key fix
         await MainActor.run {

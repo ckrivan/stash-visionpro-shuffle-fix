@@ -21,7 +21,8 @@ class AppNotificationHandler {
     ) { [weak self] notification in
       if let userInfo = notification.userInfo,
         let sceneID = userInfo["sceneID"] as? String,
-        let startTime = userInfo["startTime"] as? Double {
+        let startTime = userInfo["startTime"] as? Double
+      {
         Task {
           // Handle opening random scene
           let api = StashAPI()
@@ -41,19 +42,24 @@ class AppNotificationHandler {
   }
 }
 
+@MainActor
+class XBVRPlayerState: ObservableObject {
+  @Published var currentVideo: XBVRVideo?
+}
+
 @main
 struct StashApp: App {
   @StateObject private var appModel = AppModel()
   @StateObject private var navigationModel = NavigationModel()
-
-  
+  @StateObject private var xbvrPlayerState = XBVRPlayerState()
 
   var body: some SwiftUI.Scene {
     WindowGroup {
       ContentView()
         .environmentObject(appModel)
         .environmentObject(navigationModel)
-        .onChange(of: UIApplication.shared.applicationState) { newState in
+        .environmentObject(xbvrPlayerState)
+        .onChange(of: UIApplication.shared.applicationState) { _, newState in
           if newState != .active {
             // App is entering background, cleanup any resources
             appModel.cleanupResources()
@@ -75,5 +81,15 @@ struct StashApp: App {
         .environmentObject(navigationModel)
     }
     .immersionStyle(selection: .constant(.full), in: .full)
+
+    // Register the immersive space for XBVR VR video playback
+    ImmersiveSpace(id: "XBVRPlayerSpace") {
+      if let video = xbvrPlayerState.currentVideo {
+        VRPlayerView(video: video)
+          .environmentObject(xbvrPlayerState)
+      }
+    }
+    .immersionStyle(selection: .constant(.full), in: .mixed, .progressive, .full)
+    .upperLimbVisibility(.hidden)
   }
 }

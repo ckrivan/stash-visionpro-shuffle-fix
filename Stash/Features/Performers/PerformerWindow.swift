@@ -50,7 +50,7 @@ struct PerformerWindow: View {
         await loadMarkers()
       }
     }
-    .onChange(of: selectedTab) { _ in
+    .onChange(of: selectedTab) { _, _ in
       Task {
         if selectedTab == 0 {
           await loadScenes()

@@ -149,10 +149,10 @@ struct SpatialControlsView: View {
     .background(Material.ultraThinMaterial)
     .cornerRadius(16)
     .padding(.horizontal)
-    .onChange(of: settings) {
-      var validated = settings
+    .onChange(of: settings) { _, newSettings in
+      var validated = newSettings
       validated.validate()
-      if validated != settings {
+      if validated != newSettings {
         settings = validated
       }
     }

@@ -112,10 +112,10 @@ struct VideoAdjustmentPanel: View {
     .background(Material.ultraThinMaterial)
     .cornerRadius(16)
     .padding(.horizontal)
-    .onChange(of: adjustments) {
-      var validated = adjustments
+    .onChange(of: adjustments) { _, newAdjustments in
+      var validated = newAdjustments
       validated.validate()
-      if validated != adjustments {
+      if validated != newAdjustments {
         adjustments = validated
       }
     }

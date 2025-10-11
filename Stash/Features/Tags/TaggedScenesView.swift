@@ -66,7 +66,7 @@ struct TaggedScenesView: View {
       // Save the current scenes in the app model for easy navigation
       appModel.currentScenes = api.scenes
     }
-    .onChange(of: api.scenes) { newScenes in
+    .onChange(of: api.scenes) { _, newScenes in
       // Update app model when scenes change
       appModel.currentScenes = newScenes
     }

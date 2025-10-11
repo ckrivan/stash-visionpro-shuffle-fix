@@ -6,8 +6,7 @@ import SwiftUI
 
 struct VRPlayerView: View {
   @StateObject private var viewModel = VRPlayerViewModel()
-  @Environment(\.dismiss) private var dismiss
-  @Environment(\.openImmersiveSpace) private var openImmersiveSpace
+  @EnvironmentObject private var xbvrPlayerState: XBVRPlayerState
   @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
 
   let video: XBVRVideo
@@ -15,18 +14,46 @@ struct VRPlayerView: View {
   @State private var rootEntity = Entity()
   @State private var videoEntity: ModelEntity?
   @State private var videoMaterial: VideoMaterial?
-  @State private var showInitialGuide = true
+  @State private var showInitialGuide = false  // Disabled in immersive mode
+  @State private var contentReference: RealityViewContent?
 
   var body: some View {
     ZStack {
+      // DEBUG: Bright overlay to verify view is showing
+      Color.blue.opacity(0.3)
+        .ignoresSafeArea()
+        .onAppear {
+          print("🔵 VRPlayerView body appeared - blue overlay should be visible")
+        }
+
       // RealityKit content
       RealityView { content in
+        print("🎨 RealityView content closure called")
         content.add(rootEntity)
-        setupVideoEnvironment()
-      } update: { _ in
-        updateVideoEnvironment()
+        print("🎨 Root entity added to RealityView content")
+        print("🎨 RootEntity children count: \(rootEntity.children.count)")
+
+        // Store content reference for later use
+        contentReference = content
+
+        // If player is already available, set up video environment immediately
+        if viewModel.player != nil {
+          print(
+            "🎬 Player already available, setting up video environment in RealityView make closure")
+          setupVideoEnvironment(in: content)
+        }
+      } update: { content in
+        updateVideoEnvironment(in: content)
       }
       .ignoresSafeArea()
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color.red.opacity(0.1))
+      .onChange(of: viewModel.player) { _, newPlayer in
+        if newPlayer != nil, let content = contentReference {
+          print("🎬 Player changed, setting up video environment")
+          setupVideoEnvironment(in: content)
+        }
+      }
       .onTapGesture {
         viewModel.toggleControls()
       }
@@ -37,12 +64,12 @@ struct VRPlayerView: View {
           }
       )
 
-      // Control overlays
-      if viewModel.shouldShowControls {
-        VStack {
-          Spacer()
+      // Control overlays - Always show in immersive mode
+      VStack {
+        Spacer()
 
-          // Main controls
+        // Main controls
+        if viewModel.shouldShowControls {
           VRVideoControlsOverlay(viewModel: viewModel)
             .transition(.move(edge: .bottom).combined(with: .opacity))
 
@@ -72,9 +99,26 @@ struct VRPlayerView: View {
             )
             .transition(.move(edge: .bottom).combined(with: .opacity))
           }
+        } else {
+          // Show minimal close button when controls are hidden
+          HStack {
+            Spacer()
+            Button(action: {
+              Task {
+                await dismissImmersiveSpace()
+              }
+            }) {
+              Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.white.opacity(0.8))
+                .shadow(radius: 4)
+            }
+            .buttonStyle(.plain)
+            .padding()
+          }
         }
-        .animation(.easeInOut(duration: 0.3), value: viewModel.shouldShowControls)
       }
+      .animation(.easeInOut(duration: 0.3), value: viewModel.shouldShowControls)
 
       // Loading indicator
       if viewModel.isLoading {
@@ -116,7 +160,9 @@ struct VRPlayerView: View {
           .buttonStyle(.borderedProminent)
 
           Button("Close") {
-            dismiss()
+            Task {
+              await dismissImmersiveSpace()
+            }
           }
           .buttonStyle(.bordered)
         }
@@ -145,46 +191,98 @@ struct VRPlayerView: View {
 
   // MARK: - Video Environment Setup
 
-  private func setupVideoEnvironment() {
+  private func setupVideoEnvironment(in content: RealityViewContent) {
     Task { @MainActor in
-      guard let player = viewModel.player else { return }
+      guard let player = viewModel.player else {
+        print("❌ setupVideoEnvironment: No player available")
+        return
+      }
 
-      // Create video material
-      videoMaterial = VideoMaterial(avPlayer: player)
+      // Wait for player to be ready
+      guard let playerItem = player.currentItem else {
+        print("❌ No player item available")
+        return
+      }
 
-      // Create video sphere/surface
-      createVideoSurface()
+      print("🎨 Setting up video environment, player status: \(playerItem.status.rawValue)")
+
+      // NOTE: Following Stash pattern - don't wait for ready state
+      // Just proceed with VideoMaterial creation even if status is not ready
+      // The player will start playing audio immediately and video will appear when ready
+      if playerItem.status != .readyToPlay {
+        print(
+          "⏳ Player not ready yet (status: \(playerItem.status.rawValue)), but continuing anyway..."
+        )
+      }
+
+      print("🎨 Creating VideoMaterial...")
+
+      // Create video material with error handling
+      do {
+        videoMaterial = try VideoMaterial(avPlayer: player)
+        print("✅ VideoMaterial created successfully")
+      } catch {
+        print("❌ Failed to create VideoMaterial: \(error)")
+        return
+      }
+
+      // Create video sphere/surface with content reference
+      createVideoSurface(in: content)
 
       print("✅ VR video environment setup complete")
     }
   }
 
-  private func updateVideoEnvironment() {
+  private func updateVideoEnvironment(in content: RealityViewContent) {
     // Update when spatial settings or video format changes
     updateVideoSurface()
   }
 
-  private func createVideoSurface() {
-    guard let videoMaterial = videoMaterial else { return }
+  private func createVideoSurface(in content: RealityViewContent) {
+    guard let videoMaterial = videoMaterial else {
+      print("❌ createVideoSurface: No video material available")
+      return
+    }
+
+    print("🎨 Creating video surface...")
 
     // Remove existing entity
     videoEntity?.removeFromParent()
 
     // Create geometry based on video type and format
     let mesh = createVideoMesh()
+    print("🎨 Mesh created for video type: \(viewModel.videoType)")
 
     // Apply video adjustments to material if needed
     let finalMaterial = applyVideoAdjustments(to: videoMaterial)
 
     // Create model entity
     videoEntity = ModelEntity(mesh: mesh, materials: [finalMaterial])
+    print("🎨 ModelEntity created")
+
+    // DEBUG: Also create a visible test sphere to verify RealityKit is working
+    let testSphere = ModelEntity(
+      mesh: .generateSphere(radius: 0.3),
+      materials: [SimpleMaterial(color: .red, isMetallic: false)]
+    )
+    testSphere.position = SIMD3<Float>(0, 0, -2)  // Red sphere at 2 meters
+    rootEntity.addChild(testSphere)
+    print("🔴 Added red test sphere at (0, 0, -2) to verify rendering")
 
     // Apply spatial transforms
     updateSpatialTransform()
 
     // Add to scene
     if let videoEntity = videoEntity {
+      // DEBUG: Make it bright and obvious
+      videoEntity.position = SIMD3<Float>(0, 0, -3)  // Much closer - 3 meters
       rootEntity.addChild(videoEntity)
+      print("✅ Video entity added to scene at position: \(videoEntity.position)")
+      print("✅ Video entity scale: \(videoEntity.scale)")
+      print("✅ Video entity has \(videoEntity.model?.materials.count ?? 0) materials")
+      print("✅ RootEntity now has \(rootEntity.children.count) children")
+    } else {
+      print("❌ Failed to create video entity")
     }
   }
 

@@ -29,7 +29,7 @@ struct PerformerMarkersView: View {
     .task {
       await loadInitialContent()
     }
-    .onChange(of: searchText) { newValue in
+    .onChange(of: searchText) { _, newValue in
       Task {
         await handleSearch(query: newValue)
       }
@@ -94,7 +94,7 @@ struct PerformerMarkersView: View {
         }
         .disabled(api.markers.isEmpty)
         .opacity(api.markers.isEmpty ? 0.6 : 1.0)
-        
+
         if api.markers.isEmpty {
           Text("Loading markers...")
             .foregroundColor(.secondary)
@@ -104,44 +104,44 @@ struct PerformerMarkersView: View {
             .foregroundColor(.secondary)
             .font(.caption)
         }
-        
+
         Spacer()
       }
       .padding(.horizontal)
       .padding(.bottom, 8)
-      
+
       ScrollView {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300, maximum: 400))], spacing: 20) {
-        ForEach(api.markers) { marker in
-          MarkerRow(
-            marker: marker,
-            isPreviewVisible: visibleMarkers.contains(marker.id),
-            onTagSelected: { _ in }  // No-op since we don't need tag filtering in this view
-          )
-          .environmentObject(navigationModel)
-          .onAppear {
-            if visibleMarkers.count < 10 {
-              visibleMarkers.insert(marker.id)
-            }
-            if marker == api.markers.last && !isLoadingMore && hasMorePages {
-              Task {
-                await loadMoreMarkers()
+          ForEach(api.markers) { marker in
+            MarkerRow(
+              marker: marker,
+              isPreviewVisible: visibleMarkers.contains(marker.id),
+              onTagSelected: { _ in }  // No-op since we don't need tag filtering in this view
+            )
+            .environmentObject(navigationModel)
+            .onAppear {
+              if visibleMarkers.count < 10 {
+                visibleMarkers.insert(marker.id)
+              }
+              if marker == api.markers.last && !isLoadingMore && hasMorePages {
+                Task {
+                  await loadMoreMarkers()
+                }
               }
             }
-          }
-          .onDisappear {
-            visibleMarkers.remove(marker.id)
+            .onDisappear {
+              visibleMarkers.remove(marker.id)
+            }
           }
         }
-      }
-      .padding()
+        .padding()
       }
     }
     .tag(1)
   }
 
   // MARK: - Methods
-  
+
   private func startPerformerMarkerShuffle() {
     print("🎲 Starting performer marker shuffle for \(performer.name)")
     appModel.startMarkerShuffle(forPerformer: performer, displayedMarkers: api.markers)
