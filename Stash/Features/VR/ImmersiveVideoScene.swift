@@ -477,6 +477,13 @@ struct ImmersiveVideoScene: View {
           let duration = (try? await playerItem.asset.load(.duration).seconds) ?? 0.0
           print("🎬 Video is playable: \(isPlayable), duration: \(duration) seconds")
 
+          // CRITICAL: Check if video actually loaded
+          guard isPlayable && duration > 0 else {
+            debugMessage += "\n❌ Video failed to load (playable: \(isPlayable), duration: \(duration))"
+            print("❌ VR: Video not playable or has invalid duration")
+            return
+          }
+
           // Get video dimensions if available
           do {
             // Use loadTracks instead of tracks which is unavailable in visionOS
@@ -500,6 +507,44 @@ struct ImmersiveVideoScene: View {
             debugMessage += "\nError loading video tracks: \(error.localizedDescription)"
           }
 
+          // CRITICAL: Wait for player to be ready before creating VideoMaterial
+          // This ensures the player has buffered enough data to display video
+          print("🎬 Waiting for player to be ready...")
+
+          // Observe player status and wait for it to be ready
+          var statusObservation: NSKeyValueObservation?
+          await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            // Check if already ready
+            if playerItem.status == .readyToPlay {
+              print("✅ Player already ready")
+              continuation.resume()
+              return
+            }
+
+            // Otherwise observe status changes
+            statusObservation = playerItem.observe(\.status, options: [.new]) { item, _ in
+              if item.status == .readyToPlay {
+                print("✅ Player status changed to readyToPlay")
+                statusObservation?.invalidate()
+                continuation.resume()
+              } else if item.status == .failed {
+                print("❌ Player status failed: \(item.error?.localizedDescription ?? "unknown")")
+                statusObservation?.invalidate()
+                continuation.resume()
+              }
+            }
+
+            // Set a timeout of 10 seconds
+            Task {
+              try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
+              if statusObservation != nil {
+                print("⏱️ Player status check timed out, proceeding anyway")
+                statusObservation?.invalidate()
+                continuation.resume()
+              }
+            }
+          }
+
           await MainActor.run {
             print("🎬 Setting up VR player on MainActor")
             videoPlayer = player
@@ -508,7 +553,7 @@ struct ImmersiveVideoScene: View {
             player.automaticallyWaitsToMinimizeStalling = false
             player.actionAtItemEnd = .pause
 
-            // Create spherical video surface
+            // Create spherical video surface NOW that player is ready
             createVideoSphere(in: contentRef)
             print("🎬 Video sphere created, starting playback")
 
