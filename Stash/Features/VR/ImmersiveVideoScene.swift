@@ -416,8 +416,9 @@ struct ImmersiveVideoScene: View {
         do {
           let api = StashAPI()
           // For VR content, always use direct streaming
-          // Try HLS streaming first for better compatibility with VR videos
-          guard let request = await api.getStreamRequest(forSceneID: currentScene.id, useHLS: true)
+          // MoonPlayer uses DIRECT streaming - try that instead of HLS
+          // HLS has issues in immersive spaces (duration 0.0, fragments fail)
+          guard let request = await api.getStreamRequest(forSceneID: currentScene.id, useHLS: false)
           else {
             debugMessage += "\nFailed to get stream request"
             return
