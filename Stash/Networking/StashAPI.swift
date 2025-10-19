@@ -1504,7 +1504,10 @@ class StashAPI: ObservableObject {
     request.setValue("keep-alive", forHTTPHeaderField: "Connection")
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue(serverAddress, forHTTPHeaderField: "Origin")
-    request.httpBody = query.data(using: .utf8)
+
+    // Wrap query in proper GraphQL request format
+    let graphQLRequest = ["query": query]
+    request.httpBody = try JSONEncoder().encode(graphQLRequest)
 
     let (data, _) = try await URLSession.shared.data(for: request)
     return data

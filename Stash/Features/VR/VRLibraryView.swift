@@ -222,8 +222,16 @@ struct VRLibraryView: View {
         }
         """
 
+      print("📤 VRLibraryView: Sending GraphQL query:")
+      print(graphQLQuery)
+
       // Use the public executeGraphQLQuery method
       let responseData = try await api.executeGraphQLQuery(graphQLQuery)
+
+      print("📥 VRLibraryView: Received response data length: \(responseData.count) bytes")
+      if let responseString = String(data: responseData, encoding: .utf8) {
+        print("📥 VRLibraryView: Response preview: \(responseString.prefix(500))")
+      }
 
       // Define a local response structure
       struct FindScenesResponse: Decodable {
