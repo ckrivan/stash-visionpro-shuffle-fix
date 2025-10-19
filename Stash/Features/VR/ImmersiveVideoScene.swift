@@ -1258,8 +1258,9 @@ extension ImmersiveVideoScene {
 
         vertices.append([x, y, z])
 
-        // Normal vector pointing toward viewer (inward direction)
-        let normal = normalize(SIMD3<Float>(-x, 0, z))
+        // Normal vector pointing INWARD (opposite of vertex position)
+        // For viewing from inside the sphere, normals must face the center
+        let normal = normalize(SIMD3<Float>(-x, -y, -z))
         normals.append(normal)
 
         // Calculate UV coordinates based on format
