@@ -374,11 +374,14 @@ class StashAPI: ObservableObject {
         print("   - Video codec: \(codecInfo)")
         print("   - Uses problematic codec: \(isHEVCVideo)")
 
-        // For VR content, always use direct streaming regardless of what was requested
-        if isVRContent && shouldUseHLS {
-          print("🎬 Overriding to use direct streaming for VR content")
-          // Override to direct streaming for VR content
+        // For VR content with HEVC/problematic codecs, KEEP HLS (needs transcoding)
+        // For VR content with H.264, prefer direct streaming (best performance)
+        if isVRContent && !isHEVCVideo && shouldUseHLS {
+          print("🎬 VR content with compatible codec - using direct streaming for best performance")
           shouldUseHLS = false
+        } else if isVRContent && isHEVCVideo {
+          print("🎬 VR content with HEVC codec - using HLS transcoding for compatibility")
+          shouldUseHLS = true
         }
 
         // For HEVC videos with HLS, use a transcoded resolution for better compatibility
