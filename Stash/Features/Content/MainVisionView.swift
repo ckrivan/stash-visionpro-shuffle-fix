@@ -83,7 +83,7 @@ struct MainVisionView: View {
         case .history:
           HistoryView()
         case .vr:
-          XBVRLibraryView()
+          VRLibraryView()
         case .settings:
           SettingsView()
             .environmentObject(api)
