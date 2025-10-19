@@ -78,8 +78,16 @@ struct VRLibraryView: View {
         }
       }
       .onAppear {
+        print("🎬 VRLibraryView appeared, scenes.isEmpty: \(scenes.isEmpty)")
         if scenes.isEmpty {
-          Task { await findVRTagID() }
+          // TEMP: Hardcode tag ID to test
+          vrTagID = "1024"
+          debugMessage = "Testing with hardcoded tag ID: 1024"
+          Task {
+            await loadScenes()
+            // Uncomment this to use tag search instead:
+            // await findVRTagID()
+          }
         }
       }
     }
