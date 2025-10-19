@@ -19,13 +19,6 @@ struct VRPlayerView: View {
 
   var body: some View {
     ZStack {
-      // DEBUG: Bright overlay to verify view is showing
-      Color.blue.opacity(0.3)
-        .ignoresSafeArea()
-        .onAppear {
-          print("🔵 VRPlayerView body appeared - blue overlay should be visible")
-        }
-
       // RealityKit content
       RealityView { content in
         print("🎨 RealityView content closure called")
@@ -260,22 +253,12 @@ struct VRPlayerView: View {
     videoEntity = ModelEntity(mesh: mesh, materials: [finalMaterial])
     print("🎨 ModelEntity created")
 
-    // DEBUG: Also create a visible test sphere to verify RealityKit is working
-    let testSphere = ModelEntity(
-      mesh: .generateSphere(radius: 0.3),
-      materials: [SimpleMaterial(color: .red, isMetallic: false)]
-    )
-    testSphere.position = SIMD3<Float>(0, 0, -2)  // Red sphere at 2 meters
-    rootEntity.addChild(testSphere)
-    print("🔴 Added red test sphere at (0, 0, -2) to verify rendering")
-
     // Apply spatial transforms
     updateSpatialTransform()
 
     // Add to scene
     if let videoEntity = videoEntity {
-      // DEBUG: Make it bright and obvious
-      videoEntity.position = SIMD3<Float>(0, 0, -3)  // Much closer - 3 meters
+      videoEntity.position = SIMD3<Float>(0, 0, -3)
       rootEntity.addChild(videoEntity)
       print("✅ Video entity added to scene at position: \(videoEntity.position)")
       print("✅ Video entity scale: \(videoEntity.scale)")
