@@ -213,7 +213,7 @@ struct VRLibraryView: View {
         """
 
       // Use the public executeGraphQLQuery method
-      let data = try await api.executeGraphQLQuery(graphQLQuery)
+      let responseData = try await api.executeGraphQLQuery(graphQLQuery)
 
       // Define a local response structure
       struct FindScenesResponse: Decodable {
@@ -230,7 +230,7 @@ struct VRLibraryView: View {
       // Decode the response
       print("🔍 VRLibraryView: Decoding scene response...")
       let decoder = JSONDecoder()
-      let response = try decoder.decode(FindScenesResponse.self, from: data)
+      let response = try decoder.decode(FindScenesResponse.self, from: responseData)
 
       scenes = response.data.findScenes.scenes
       hasMorePages = response.data.findScenes.scenes.count >= 20
@@ -241,9 +241,6 @@ struct VRLibraryView: View {
       isLoading = false
     } catch {
       print("❌ VRLibraryView: Error loading scenes: \(error)")
-      if let dataString = String(data: data, encoding: .utf8) {
-        print("   Response data: \(dataString.prefix(500))")
-      }
       self.error = error
       debugMessage = "Error loading scenes: \(error.localizedDescription)"
       isLoading = false
