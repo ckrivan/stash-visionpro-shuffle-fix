@@ -10,7 +10,7 @@ struct ScenesGridView: View {
   var body: some View {
     LazyVGrid(columns: columns, spacing: 20) {
       ForEach(scenes) { scene in
-        SceneRow(scene: scene)
+        SceneRow(scene: scene, allScenes: scenes)
       }
     }
     .padding()
@@ -43,6 +43,6 @@ struct MarkersGridView_Previews: PreviewProvider {
   static var previews: some View {
     MarkersGridView(markers: [SceneMarker.example])
       .environmentObject(NavigationModel())
-      
+
   }
 }

@@ -16,7 +16,22 @@
       "Bash(/mcp)",
       "mcp__ref-tools__ref_search_documentation",
       "WebSearch",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(swift-format:*)",
+      "Bash(git log:*)",
+      "WebFetch(domain:192.168.86.100)",
+      "mcp__ref-tools__ref_read_url",
+      "WebFetch(domain:deovr.com)",
+      "Bash(xcrun simctl spawn:*)",
+      "Bash(log show:*)",
+      "Bash(xcrun simctl list:*)",
+      "Bash(1)",
+      "Bash(swiftlint lint:*)",
+      "Bash(curl -s -X POST 'http://192.168.86.100:9999/graphql' -H 'Content-Type: application/json' -H 'ApiKey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJkZWZhdWx0IiwiaWF0IjoxNzI4NTM1NTQzLCJzdWIiOiJBcGlLZXkifQ.v0Ut5R6dJ7Q1U4RL9TBBCPeJaslBV8_VQbANUAbnCwI' -d '{\"\"\"\"query\"\"\"\":\"\"\"\"query { findScenes(filter: {page: 1, per_page: 500}) { count scenes { id title files { width height } } } }\"\"\"\"}')",
+      "Bash(python3:*)",
+      "Bash(ffprobe:*)",
+      "Read(//Volumes/Backup/List/Jenna Haze/**)",
+      "Bash(timeout 180 xcodebuild:*)"
     ],
     "deny": []
   }

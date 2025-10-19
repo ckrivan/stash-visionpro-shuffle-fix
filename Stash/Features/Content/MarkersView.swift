@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
 
-
 struct MarkersView: View {
   // Dependencies
   @EnvironmentObject private var appModel: AppModel
@@ -12,7 +11,7 @@ struct MarkersView: View {
   @State private var hasMorePages = true
   @State private var allMarkers: [SceneMarker] = []
   @State private var isLoading = false
-  
+
   // Track pages for each tag in multi-tag mode
   @State private var multiTagPages: [String: Int] = [:]
 
@@ -44,10 +43,10 @@ struct MarkersView: View {
   private func shouldIncludeMarker(_ marker: SceneMarker, tagId: String) -> Bool {
     return hasPrimaryTag(marker, tagId: tagId) || hasTag(marker, tagId: tagId)
   }
-  
+
   private func shouldIncludeMarkerMultiTag(_ marker: SceneMarker, tagIds: Set<String>) -> Bool {
     guard !tagIds.isEmpty else { return true }
-    
+
     // Check if marker has ANY of the selected tags
     if let primaryTag = marker.primary_tag, tagIds.contains(primaryTag.id) {
       return true
@@ -57,21 +56,26 @@ struct MarkersView: View {
     }
     return false
   }
-  
+
   private func extractAvailableTags() {
     var tags = Set<StashScene.Tag>()
-    
+
     for marker in allMarkers {
       if let primaryTag = marker.primary_tag {
-        tags.insert(StashScene.Tag(id: primaryTag.id, name: primaryTag.name, scene_count: 0, image_count: 0))
+        tags.insert(
+          StashScene.Tag(
+            id: primaryTag.id, name: primaryTag.name, scene_count: 0, image_count: 0,
+            scene_marker_count: 0))
       }
       if let markerTags = marker.tags {
         for tag in markerTags {
-          tags.insert(StashScene.Tag(id: tag.id, name: tag.name, scene_count: 0, image_count: 0))
+          tags.insert(
+            StashScene.Tag(
+              id: tag.id, name: tag.name, scene_count: 0, image_count: 0, scene_marker_count: 0))
         }
       }
     }
-    
+
     availableTags = Array(tags).sorted { $0.name < $1.name }
     print("📊 extractAvailableTags: Found \(availableTags.count) unique tags")
   }
@@ -81,11 +85,14 @@ struct MarkersView: View {
       // OR logic: include markers that have ANY of the selected tags (client-side filtering now)
       displayedMarkers = allMarkers.filter { marker in
         guard let tags = marker.tags else { return false }
-        return tags.contains { t in selectedTagIds.contains(t.id) } || (marker.primary_tag != nil && selectedTagIds.contains(marker.primary_tag!.id))
+        return tags.contains { t in selectedTagIds.contains(t.id) }
+          || (marker.primary_tag != nil && selectedTagIds.contains(marker.primary_tag!.id))
       }
-      print("🔍 Multi-tag OR filter: \(selectedTagIds.count) tags selected, \(displayedMarkers.count) markers shown")
+      print(
+        "🔍 Multi-tag OR filter: \(selectedTagIds.count) tags selected, \(displayedMarkers.count) markers shown"
+      )
     } else if let tagId = selectedTagId {
-      // Filter markers by single selected tag  
+      // Filter markers by single selected tag
       displayedMarkers = allMarkers.filter { marker in
         shouldIncludeMarker(marker, tagId: tagId)
       }
@@ -93,9 +100,11 @@ struct MarkersView: View {
       // Show all markers
       displayedMarkers = allMarkers
     }
-    
+
     // Enhanced logging for debugging
-    print("🔍 updateDisplayedMarkers: allMarkers=\(allMarkers.count), displayedMarkers=\(displayedMarkers.count), selectedTagId=\(selectedTagId ?? "nil"), multiTagMode=\(isMultiTagMode)")
+    print(
+      "🔍 updateDisplayedMarkers: allMarkers=\(allMarkers.count), displayedMarkers=\(displayedMarkers.count), selectedTagId=\(selectedTagId ?? "nil"), multiTagMode=\(isMultiTagMode)"
+    )
   }
 
   private var filterHeader: some View {
@@ -108,7 +117,8 @@ struct MarkersView: View {
         let tagName =
           (marker.primary_tag?.id == selectedTagId
             ? marker.primary_tag?.name
-            : marker.tags?.first(where: { $0.id == selectedTagId })?.name) {
+            : marker.tags?.first(where: { $0.id == selectedTagId })?.name)
+      {
         HStack {
           Text("Filtered by tag: \(tagName)")
           Button(action: clearFilter) {
@@ -120,14 +130,14 @@ struct MarkersView: View {
     }
   }
 
-
   // MARK: - Enhanced UI Helper Methods
-  
+
   private var selectedTagText: String {
     if isMultiTagMode {
       return selectedTagIds.isEmpty ? "Select Tags" : "\(selectedTagIds.count) tags"
     } else if let tagId = selectedTagId,
-              let tag = availableTags.first(where: { $0.id == tagId }) {
+      let tag = availableTags.first(where: { $0.id == tagId })
+    {
       return tag.name
     } else {
       return "All Tags"
@@ -200,7 +210,7 @@ struct MarkersView: View {
       updateDisplayedMarkers()
     }
   }
-  
+
   /// Start universal shuffle with all currently displayed markers
   /// For multi-tag mode, shuffle uses custom weighted randomization over tags:
   /// - Group markers by tag.
@@ -210,67 +220,74 @@ struct MarkersView: View {
   private func startUniversalShuffle() {
     print("🎲 Starting universal shuffle with \(displayedMarkers.count) markers")
     print("🎲 Selected tags: \(selectedTagIds), single tag: \(selectedTagId?.description ?? "none")")
-    
+
     if !selectedTagIds.isEmpty {
       // Use API-based equal distribution shuffle for multiple tags
       let tagNames = selectedTagIds.compactMap { tagId in
         availableTags.first { $0.id == tagId }?.name
       }
       print("🎲 Starting API-based multi-tag shuffle with equal distribution for: \(tagNames)")
-      appModel.startMarkerShuffle(forMultipleTags: Array(selectedTagIds), tagNames: tagNames, displayedMarkers: displayedMarkers)
-      
+      appModel.startMarkerShuffle(
+        forMultipleTags: Array(selectedTagIds), tagNames: tagNames,
+        displayedMarkers: displayedMarkers)
+
     } else if let selectedTagId = selectedTagId,
-              let tag = availableTags.first(where: { $0.id == selectedTagId }) {
+      let tag = availableTags.first(where: { $0.id == selectedTagId })
+    {
       print("🎲 Starting API-based single-tag shuffle for: \(tag.name)")
-      appModel.startMarkerShuffle(forTag: selectedTagId, tagName: tag.name, displayedMarkers: displayedMarkers)
+      appModel.startMarkerShuffle(
+        forTag: selectedTagId, tagName: tag.name, displayedMarkers: displayedMarkers)
     } else if !appModel.searchQuery.isEmpty {
       print("🎲 Starting API-based search shuffle for: \(appModel.searchQuery)")
-      appModel.startMarkerShuffle(forSearchQuery: appModel.searchQuery, displayedMarkers: displayedMarkers)
+      appModel.startMarkerShuffle(
+        forSearchQuery: appModel.searchQuery, displayedMarkers: displayedMarkers)
     } else {
       print("🎲 Starting API-based all markers shuffle")
       appModel.startMarkerShuffle(forSearchQuery: "All Markers", displayedMarkers: displayedMarkers)
     }
   }
-  
+
   /// Generates a custom shuffle queue implementing weighted randomization by tags:
   /// - groupedMarkers: dictionary where keys are tag IDs and values are arrays of markers for that tag.
   /// - The shuffle picks a tag at random (equal chance) then picks a marker from that tag's group (excluding already chosen markers).
   /// - Continues until all markers are included.
   /// - Returns a list of markers shuffled using this weighted approach.
-  private func generateWeightedRandomizedShuffleQueue(groupedMarkers: [String: [SceneMarker]]) -> [SceneMarker] {
+  private func generateWeightedRandomizedShuffleQueue(groupedMarkers: [String: [SceneMarker]])
+    -> [SceneMarker]
+  {
     // Copy marker arrays for mutation
     var mutableGroups = groupedMarkers.mapValues { $0.shuffled() }
     // Result queue
     var resultQueue: [SceneMarker] = []
     // Keep track of which markers have been added to avoid duplicates
     var addedMarkers = Set<String>()
-    
+
     // Flatten all markers for quick check of total count
     let totalMarkersCount = Set(groupedMarkers.values.flatMap { $0 }).count
-    
+
     // Get list of tag keys for random selection
     var tagKeys = Array(mutableGroups.keys)
-    
+
     while addedMarkers.count < totalMarkersCount {
       if tagKeys.isEmpty {
         break
       }
-      
+
       // Randomly select a tag index
       let randomTagIndex = Int.random(in: 0..<tagKeys.count)
       let tagId = tagKeys[randomTagIndex]
-      
+
       // Access the group's array of markers
       if var markersForTag = mutableGroups[tagId], !markersForTag.isEmpty {
         // Pick the first marker (already shuffled)
         let candidate = markersForTag.removeFirst()
         mutableGroups[tagId] = markersForTag
-        
+
         if !addedMarkers.contains(candidate.id) {
           resultQueue.append(candidate)
           addedMarkers.insert(candidate.id)
         }
-        
+
         // If after removing, group's empty, remove tag from keys so it won't be picked again
         if markersForTag.isEmpty {
           tagKeys.remove(at: randomTagIndex)
@@ -280,14 +297,14 @@ struct MarkersView: View {
         tagKeys.remove(at: randomTagIndex)
       }
     }
-    
+
     return resultQueue
   }
 
   private func trackVisibleMarker(_ marker: SceneMarker) {
     visibleMarkers.insert(marker.id)
   }
-  
+
   private func performSearch(_ query: String) {
     Task {
       if query.isEmpty {
@@ -309,10 +326,10 @@ struct MarkersView: View {
       }
     }
   }
-  
+
   private func extractTagsFromMarkers() {
     var tags: Set<StashScene.Tag> = []
-    
+
     for marker in displayedMarkers {
       if let primaryTag = marker.primary_tag {
         tags.insert(primaryTag)
@@ -323,7 +340,7 @@ struct MarkersView: View {
         }
       }
     }
-    
+
     availableTags = Array(tags).sorted { $0.name < $1.name }
   }
 
@@ -351,7 +368,7 @@ struct MarkersView: View {
               .onChange(of: appModel.searchQuery) { _, newValue in
                 performSearch(newValue)
               }
-            
+
             // Tag filter controls
             HStack(spacing: 12) {
               // Tag filter button
@@ -365,7 +382,7 @@ struct MarkersView: View {
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
               }
-              
+
               // Multi-tag mode toggle
               Button(action: { isMultiTagMode.toggle() }) {
                 HStack {
@@ -377,7 +394,7 @@ struct MarkersView: View {
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
               }
-              
+
               // Shuffle button
               if !displayedMarkers.isEmpty {
                 Button(action: startUniversalShuffle) {
@@ -391,7 +408,7 @@ struct MarkersView: View {
                   .background(.red, in: RoundedRectangle(cornerRadius: 8))
                 }
               }
-              
+
               // Show tag weights info if in shuffle mode with tags
               if appModel.isMarkerShuffleMode && !appModel.shuffleTagIds.isEmpty {
                 HStack(spacing: 6) {
@@ -406,11 +423,11 @@ struct MarkersView: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
                 .help("Each tag gets equal representation in shuffle")
               }
-              
+
               Spacer()
             }
             .padding(.horizontal)
-            
+
             // Multi-tag selection display
             if isMultiTagMode && !selectedTagIds.isEmpty {
               ScrollView(.horizontal, showsIndicators: false) {
@@ -445,7 +462,7 @@ struct MarkersView: View {
           }
           .padding(.top)
           .background(.ultraThinMaterial)
-          
+
           // Content area
           if isLoading && displayedMarkers.isEmpty {
             VStack {
@@ -481,7 +498,7 @@ struct MarkersView: View {
                     visibleMarkers.remove(marker.id)
                   }
                 }
-                
+
                 if isLoadingMore && hasMorePages {
                   ProgressView("Loading more...")
                     .frame(maxWidth: .infinity)
@@ -527,10 +544,10 @@ struct MarkersView: View {
     visibleMarkers.removeAll()
     selectedTagId = nil
     multiTagPages = [:]
-    
+
     // Debug: Print server connection information
     print("📊 MarkersView server address: \(appModel.serverAddress)")
-    
+
     // Try to fetch markers with more detailed logging
     print("📊 MarkersView attempting to fetch markers...")
     if isMultiTagMode && !selectedTagIds.isEmpty {
@@ -540,14 +557,15 @@ struct MarkersView: View {
         multiTagPages[tagId] = 1
       }
       // Fetch markers server-side for multi-tag selection
-      await appModel.api.fetchMarkersByTags(tagIds: Array(selectedTagIds), page: 1, perPage: 25, appendResults: false) // NEW multi-tag fetch
+      await appModel.api.fetchMarkersByTags(
+        tagIds: Array(selectedTagIds), page: 1, perPage: 25, appendResults: false)  // NEW multi-tag fetch
     } else if let tagId = selectedTagId {
       await appModel.api.fetchMarkersByTag(tagId: tagId, page: currentPage, appendResults: false)
     } else {
       await appModel.api.fetchMarkers(page: currentPage, appendResults: false)
     }
     print("📊 MarkersView markers fetch completed, received: \(appModel.api.markers.count)")
-    
+
     await MainActor.run {
       allMarkers = appModel.api.markers
       updateDisplayedMarkers()
@@ -555,7 +573,9 @@ struct MarkersView: View {
       // Set initial pagination state
       hasMorePages = appModel.api.markers.count < appModel.api.totalMarkerCount
       isLoading = false
-      print("📊 MarkersView: Set allMarkers=\(allMarkers.count), displayedMarkers=\(displayedMarkers.count), total=\(appModel.api.totalMarkerCount), hasMore=\(hasMorePages)")
+      print(
+        "📊 MarkersView: Set allMarkers=\(allMarkers.count), displayedMarkers=\(displayedMarkers.count), total=\(appModel.api.totalMarkerCount), hasMore=\(hasMorePages)"
+      )
     }
   }
 
@@ -579,7 +599,8 @@ struct MarkersView: View {
           }
         }
         // Fetch next page server-side for multi-tag selection not supported here, so fallback:
-        await appModel.api.fetchMarkersByTags(tagIds: Array(selectedTagIds), page: nextPage, perPage: 25, appendResults: true) // NEW multi-tag fetch
+        await appModel.api.fetchMarkersByTags(
+          tagIds: Array(selectedTagIds), page: nextPage, perPage: 25, appendResults: true)  // NEW multi-tag fetch
         // Update multiTagPages for all selected tags (set to nextPage)
         for tagId in selectedTagIds {
           multiTagPages[tagId] = nextPage
@@ -622,7 +643,8 @@ struct MarkersView: View {
 
     // NEW multi-tag server-side pagination fetch
     if isMultiTagMode && !selectedTagIds.isEmpty {
-      await appModel.api.fetchMarkersByTags(tagIds: Array(selectedTagIds), page: currentPage, perPage: 25, appendResults: true)
+      await appModel.api.fetchMarkersByTags(
+        tagIds: Array(selectedTagIds), page: currentPage, perPage: 25, appendResults: true)
     } else if let tagId = selectedTagId {
       await appModel.api.fetchMarkersByTag(tagId: tagId, page: currentPage, appendResults: true)
     } else {
@@ -633,7 +655,9 @@ struct MarkersView: View {
     isLoadingMore = false
     // Check if there are more markers available based on total count
     hasMorePages = appModel.api.markers.count < appModel.api.totalMarkerCount
-    print("📊 Pagination check: loaded=\(appModel.api.markers.count), total=\(appModel.api.totalMarkerCount), hasMore=\(hasMorePages)")
+    print(
+      "📊 Pagination check: loaded=\(appModel.api.markers.count), total=\(appModel.api.totalMarkerCount), hasMore=\(hasMorePages)"
+    )
   }
 
   /// Load more markers for multi-tag selection by paging each tag individually
@@ -746,4 +770,3 @@ struct MarkersView_Previews: PreviewProvider {
       .environmentObject(NavigationModel())
   }
 }
-

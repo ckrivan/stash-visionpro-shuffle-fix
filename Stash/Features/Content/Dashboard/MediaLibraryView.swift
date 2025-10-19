@@ -3,6 +3,7 @@ import SwiftUI
 struct MediaLibraryView: View {
   @StateObject private var api = StashAPI()
   @EnvironmentObject private var navigationModel: NavigationModel
+  @EnvironmentObject private var appModel: AppModel
   @State private var selectedScene: StashScene?
   @State private var currentPage = 1
   @State private var isLoadingMore = false
@@ -24,15 +25,10 @@ struct MediaLibraryView: View {
           api.scenes.removeAll { $0.id == id }
         },
         onSceneTap: { scene in
+          // Set scene context for next/previous navigation
+          appModel.setCurrentScene(scene, in: api.scenes)
           selectedScene = scene
           showPlayer = true
-          Task {
-            do {
-              try await api.fetchScenes(page: 1, sort: "random")
-            } catch {
-              print("Error fetching random scenes: \(error)")
-            }
-          }
         },
         onSceneAppear: { scene in
           checkIfLoadMore(scene)
@@ -104,6 +100,7 @@ struct MediaLibraryView: View {
       if let scene = selectedScene {
         VideoPlayerView(scene: scene)
           .environmentObject(navigationModel)
+          .environmentObject(appModel)
       }
     }
   }
@@ -112,16 +109,8 @@ struct MediaLibraryView: View {
     currentPage = 1
     hasMorePages = true
     do {
-      // Immediately fetch first page
+      // Fetch first page only - no prefetching
       try await api.fetchScenes()
-
-      // Pre-fetch the second page in the background
-      if hasMorePages {
-        Task {
-          try? await Task.sleep(nanoseconds: 500_000_000)  // Wait 0.5 seconds before pre-fetching
-          await preloadNextPage()
-        }
-      }
     } catch {
       print("Error loading scenes: \(error)")
     }
@@ -166,7 +155,7 @@ struct MediaLibraryView: View {
 
     let previousCount = api.scenes.count
     do {
-      try await api.fetchScenes()
+      try await api.fetchScenes(page: currentPage, appendResults: true)
     } catch {
       print("Error loading more scenes: \(error)")
     }
@@ -178,10 +167,10 @@ struct MediaLibraryView: View {
   private func checkIfLoadMore(_ scene: StashScene) {
     // Check if this is one of the last few scenes displayed
     let visibleIndex = api.scenes.firstIndex { $0.id == scene.id } ?? 0
-    let threshold = max(0, api.scenes.count - 5)  // Load more when we're 5 items from the end
+    let threshold = max(0, api.scenes.count - 3)  // Load more when we're 3 items from the end (reduced for performance)
 
     if visibleIndex >= threshold && !isLoadingMore && hasMorePages {
-      print("Loading more scenes at index \(visibleIndex) of \(api.scenes.count)")
+      print("📥 Loading more scenes at index \(visibleIndex) of \(api.scenes.count)")
       Task {
         await loadMoreScenes()
       }
@@ -234,6 +223,8 @@ struct MediaLibraryView: View {
 
         // Get the first scene from the random results
         if let randomScene = api.scenes.first {
+          // Set scene context for next/previous navigation
+          appModel.setCurrentScene(randomScene, in: api.scenes)
           selectedScene = randomScene
           showPlayer = true
         }
@@ -281,8 +272,8 @@ struct MediaLibraryContentView: View {
 
   var body: some View {
     ScrollView {
-      let columnCount = getColumnCount(for: geometry.size.width)
-      let columns = Array(repeating: GridItem(.flexible()), count: columnCount)
+      // Use adaptive grid items for uniform sizing (like iPad version)
+      let columns = [GridItem(.adaptive(minimum: 300, maximum: 400), spacing: 20)]
 
       Rectangle()
         .fill(Color.clear)
@@ -294,7 +285,7 @@ struct MediaLibraryContentView: View {
 
       LazyVGrid(columns: columns, spacing: 20) {
         ForEach(api.scenes, id: \.id) { scene in
-          SceneRow(scene: scene, onDelete: onDelete)
+          SceneRow(scene: scene, onDelete: onDelete, allScenes: api.scenes)
             .frame(maxWidth: .infinity)
             .onTapGesture {
               onSceneTap(scene)
@@ -302,13 +293,7 @@ struct MediaLibraryContentView: View {
             .onAppear {
               onSceneAppear(scene)
             }
-            .task {
-              if let screenshotPath = scene.paths.screenshot,
-                let url = URL(string: screenshotPath)
-              {
-                _ = try? await URLSession.shared.data(from: url)
-              }
-            }
+          // Removed image prefetching for performance - let AsyncImage handle it lazily
         }
 
         if isLoadingMore {

@@ -110,19 +110,22 @@ class MarkerViewModel: ObservableObject {
         for marker in loadedMarkers {
           // Add primary tag if available
           if let primaryTag = marker.primary_tag {
-            let stashTag = StashScene.Tag(id: primaryTag.id, name: primaryTag.name, scene_count: 0, image_count: 0)
+            let stashTag = StashScene.Tag(
+              id: primaryTag.id, name: primaryTag.name, scene_count: 0, image_count: 0,
+              scene_marker_count: 0)
             tags.insert(stashTag)
           }
 
           // Add other tags
           if let markerTags = marker.tags {
             for tag in markerTags {
-              let stashTag = StashScene.Tag(id: tag.id, name: tag.name, scene_count: 0, image_count: 0)
+              let stashTag = StashScene.Tag(
+                id: tag.id, name: tag.name, scene_count: 0, image_count: 0, scene_marker_count: 0)
               tags.insert(stashTag)
             }
           }
         }
-        
+
         return Array(tags).sorted { $0.name < $1.name }
       }
 
@@ -170,11 +173,16 @@ class MarkerViewModel: ObservableObject {
       var tags = Set<StashScene.Tag>()
       for marker in loadedMarkers {
         if let primaryTag = marker.primary_tag {
-          tags.insert(StashScene.Tag(id: primaryTag.id, name: primaryTag.name, scene_count: 0, image_count: 0))
+          tags.insert(
+            StashScene.Tag(
+              id: primaryTag.id, name: primaryTag.name, scene_count: 0, image_count: 0,
+              scene_marker_count: 0))
         }
         if let markerTags = marker.tags {
           for tag in markerTags {
-            tags.insert(StashScene.Tag(id: tag.id, name: tag.name, scene_count: 0, image_count: 0))
+            tags.insert(
+              StashScene.Tag(
+                id: tag.id, name: tag.name, scene_count: 0, image_count: 0, scene_marker_count: 0))
           }
         }
       }
@@ -208,24 +216,29 @@ class MarkerViewModel: ObservableObject {
       self.currentPage = 1
       self.hasMorePages = true
     }
-    
+
     // Use the existing fetchMarkers method from StashAPI
     await api.fetchMarkers(page: 1, appendResults: false)
-    
+
     // Get the markers from the API
     let loadedMarkers = await api.markers
     print("📊 MarkerViewModel: Received \(loadedMarkers.count) markers from API")
-    
+
     await MainActor.run {
       // Extract all tags from markers for filtering
       var tags = Set<StashScene.Tag>()
       for marker in loadedMarkers {
         if let primaryTag = marker.primary_tag {
-          tags.insert(StashScene.Tag(id: primaryTag.id, name: primaryTag.name, scene_count: 0, image_count: 0))
+          tags.insert(
+            StashScene.Tag(
+              id: primaryTag.id, name: primaryTag.name, scene_count: 0, image_count: 0,
+              scene_marker_count: 0))
         }
         if let markerTags = marker.tags {
           for tag in markerTags {
-            tags.insert(StashScene.Tag(id: tag.id, name: tag.name, scene_count: 0, image_count: 0))
+            tags.insert(
+              StashScene.Tag(
+                id: tag.id, name: tag.name, scene_count: 0, image_count: 0, scene_marker_count: 0))
           }
         }
       }
@@ -235,7 +248,9 @@ class MarkerViewModel: ObservableObject {
       self.availableTags = Array(tags).sorted { $0.name < $1.name }
       self.isLoading = false
       self.hasMorePages = loadedMarkers.count >= 40
-      print("✅ MarkerViewModel: Updated state with \(self.markers.count) markers and \(self.availableTags.count) available tags")
+      print(
+        "✅ MarkerViewModel: Updated state with \(self.markers.count) markers and \(self.availableTags.count) available tags"
+      )
     }
   }
 
@@ -468,7 +483,7 @@ class MarkerViewModel: ObservableObject {
       if let tags = marker.tags {
         return tags.contains { $0.id == tagId }
       }
-      
+
       return false
     }
 

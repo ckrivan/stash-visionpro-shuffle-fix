@@ -2,7 +2,7 @@ import SwiftUI
 
 struct VRVideoControlsOverlay: View {
   @ObservedObject var viewModel: VRPlayerViewModel
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
 
   var body: some View {
     VStack(spacing: 16) {
@@ -73,7 +73,9 @@ struct VRVideoControlsOverlay: View {
     HStack(spacing: 24) {
       // Exit button
       Button(action: {
-        dismiss()
+        Task {
+          await dismissImmersiveSpace()
+        }
       }) {
         Image(systemName: "xmark.circle.fill")
           .font(.title2)

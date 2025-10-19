@@ -169,7 +169,7 @@ struct VRLibraryView: View {
     do {
       let api = StashAPI()
 
-      // Create a direct GraphQL query instead of using SceneFilterType
+      // Create a direct GraphQL query matching the web UI structure
       let graphQLQuery = """
         {
           findScenes(
@@ -180,7 +180,9 @@ struct VRLibraryView: View {
             scene_filter: {
               tags: {
                 value: ["\(tagID)"],
-                modifier: INCLUDES
+                excludes: [],
+                modifier: INCLUDES_ALL,
+                depth: 0
               }
             }
           ) {
@@ -274,7 +276,7 @@ struct VRLibraryView: View {
     do {
       let api = StashAPI()
 
-      // Create a direct GraphQL query for the next page
+      // Create a direct GraphQL query for the next page matching web UI structure
       let nextPage = currentPage + 1
       let graphQLQuery = """
         {
@@ -286,7 +288,9 @@ struct VRLibraryView: View {
             scene_filter: {
               tags: {
                 value: ["\(tagID)"],
-                modifier: INCLUDES
+                excludes: [],
+                modifier: INCLUDES_ALL,
+                depth: 0
               }
             }
           ) {

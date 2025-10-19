@@ -209,25 +209,53 @@ class VRPlayerViewModel: ObservableObject {
   }
 
   private func setupPlayer(with url: URL) async throws {
+    print("🎬 Setting up player with URL: \(url)")
+
+    // Create asset with proper options for network playback
+    let asset = AVURLAsset(url: url, options: [
+      "AVURLAssetOutOfBandMIMETypeKey": "video/mp4",
+      "AVURLAssetAllowsExpensiveNetworkAccess": true,
+      "AVURLAssetAllowsConstrainedNetworkAccess": true
+    ])
+
     // Create player item with enhanced buffering
-    let asset = AVURLAsset(url: url)
     let playerItem = AVPlayerItem(asset: asset)
     playerItem.preferredForwardBufferDuration = 20
+    playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
 
     // Create player
     let newPlayer = AVPlayer(playerItem: playerItem)
     newPlayer.automaticallyWaitsToMinimizeStalling = false
 
-    // Set up observations
+    // CRITICAL: Validate asset before proceeding
+    print("🎬 Loading asset properties...")
+    await playerItem.asset.loadValues(forKeys: ["playable", "duration", "tracks"])
+
+    let isPlayable = (try? await playerItem.asset.load(.isPlayable)) ?? false
+    print("🎬 Asset playable: \(isPlayable)")
+
+    // Note: Following Stash pattern - continue even if not playable
+    // AVPlayer may still work even if isPlayable reports false
+    if !isPlayable {
+      print("⚠️ Asset reports not playable, but continuing anyway (Stash pattern)")
+    }
+
+    // Set up observations BEFORE assigning player
     setupPlayerObservations(for: newPlayer)
 
-    // Update UI
+    // Update UI - assign player so view can observe it
     player = newPlayer
     duration = try await asset.load(.duration).seconds
+    print("🎬 Duration: \(duration)s")
+
+    // CRITICAL: Wait 500ms for VideoMaterial and RealityKit setup (Stash pattern)
+    print("⏳ Waiting 500ms for RealityKit initialization...")
+    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
 
     // Start playback
     newPlayer.play()
     isPlaying = true
+    print("✅ Player setup complete and playing")
   }
 
   private func setupPlayerObservations(for player: AVPlayer) {

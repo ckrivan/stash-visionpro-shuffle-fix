@@ -77,6 +77,53 @@ private class PlayerContainerView: UIView {
     layer.needsDisplayOnBoundsChange = true
     layer.backgroundColor = UIColor.clear.cgColor  // Ensure background is clear
 
+    // CRITICAL: Check video's pixel aspect ratio asynchronously
+    if let asset = player.currentItem?.asset {
+      Task {
+        do {
+          // Load video tracks using modern async API
+          let tracks = try await asset.loadTracks(withMediaType: .video)
+          guard let videoTrack = tracks.first else { return }
+
+          // Load track properties
+          let naturalSize = try await videoTrack.load(.naturalSize)
+          let formatDescriptions = try await videoTrack.load(.formatDescriptions)
+
+          // Get pixel aspect ratio from format descriptions
+          if let formatDescription = formatDescriptions.first {
+            let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
+
+            // Get pixel aspect ratio extension
+            var pixelAspectRatioValue: CGFloat = 1.0
+            if let extensions = CMFormatDescriptionGetExtensions(formatDescription) as? [String: Any],
+               let pixelAspectRatioDict = extensions["CVPixelAspectRatio"] as? [String: Any],
+               let hSpacing = pixelAspectRatioDict["HorizontalSpacing"] as? Int,
+               let vSpacing = pixelAspectRatioDict["VerticalSpacing"] as? Int,
+               vSpacing > 0 {
+              pixelAspectRatioValue = CGFloat(hSpacing) / CGFloat(vSpacing)
+            }
+
+            print("🎬 Video metadata:")
+            print("  - Storage size: \(dimensions.width)x\(dimensions.height)")
+            print("  - Natural size: \(naturalSize)")
+            print("  - Pixel aspect ratio value: \(pixelAspectRatioValue)")
+
+            // If pixels are non-square, AVPlayerLayer should handle it automatically
+            // but we'll log it for debugging
+            if pixelAspectRatioValue != 1.0 {
+              let displayWidth = CGFloat(dimensions.width) * pixelAspectRatioValue
+              let displayRatio = displayWidth / CGFloat(dimensions.height)
+              print("  ⚠️ Non-square pixels detected!")
+              print("  - Display size should be: \(Int(displayWidth))x\(dimensions.height)")
+              print("  - Display aspect ratio: \(String(format: "%.3f", displayRatio))")
+            }
+          }
+        } catch {
+          print("❌ Error loading video metadata: \(error)")
+        }
+      }
+    }
+
     // Add debug info
     print("🎬 Player layer configuration:")
     print("  - Frame: \(layer.frame)")
@@ -3078,6 +3125,31 @@ struct VideoControlsOverlay: View {
       .padding(10)  // Add padding to increase tap area
       .help("Find more scenes with this performer (females only)")
 
+      // Sequential scene navigation (only show when multiple scenes available AND not in marker shuffle mode)
+      if appModel.currentScenes.count > 1 && !appModel.isMarkerShuffleMode {
+        // Previous scene button
+        Button(action: { appModel.previousScene() }) {
+          Image(systemName: "chevron.left.circle.fill")
+            .font(.system(size: 42))
+            .foregroundStyle(.orange)
+            .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 0)
+        }
+        .buttonStyle(.plain)
+        .padding(10)
+        .help("Previous scene (random timestamp)")
+
+        // Next scene button
+        Button(action: { appModel.nextScene() }) {
+          Image(systemName: "chevron.right.circle.fill")
+            .font(.system(size: 42))
+            .foregroundStyle(.orange)
+            .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 0)
+        }
+        .buttonStyle(.plain)
+        .padding(10)
+        .help("Next scene (random timestamp)")
+      }
+
       // Marker shuffle controls (only show when in marker shuffle mode)
       if appModel.isMarkerShuffleMode {
         // Previous marker button
@@ -3903,6 +3975,47 @@ class VideoPlayerManager: NSObject, ObservableObject {
               if durationSeconds.isFinite && durationSeconds > 0 {
                 self.duration = durationSeconds
                 print("🎬 Video duration: \(self.formatTime(durationSeconds))")
+              }
+
+              // Check pixel aspect ratio for anamorphic videos
+              Task {
+                do {
+                  let tracks = try await item.asset.loadTracks(withMediaType: .video)
+                  if let videoTrack = tracks.first {
+                    let naturalSize = try await videoTrack.load(.naturalSize)
+                    let formatDescriptions = try await videoTrack.load(.formatDescriptions)
+
+                    if let formatDescription = formatDescriptions.first {
+                      let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
+
+                      // Try to get pixel aspect ratio from format description extensions
+                      var pixelAspectRatioValue: CGFloat = 1.0
+                      if let extensions = CMFormatDescriptionGetExtensions(formatDescription) as? [String: Any] {
+                        if let pixelAspectRatioDict = extensions["CVPixelAspectRatio"] as? [String: Any],
+                           let hSpacing = pixelAspectRatioDict["HorizontalSpacing"] as? Int,
+                           let vSpacing = pixelAspectRatioDict["VerticalSpacing"] as? Int,
+                           vSpacing > 0 {
+                          pixelAspectRatioValue = CGFloat(hSpacing) / CGFloat(vSpacing)
+                        }
+                      }
+
+                      print("🎬 Video metadata:")
+                      print("  - Storage size: \(dimensions.width)x\(dimensions.height)")
+                      print("  - Natural size: \(naturalSize.width)x\(naturalSize.height)")
+                      print("  - Pixel aspect ratio: \(pixelAspectRatioValue)")
+
+                      if pixelAspectRatioValue != 1.0 {
+                        let displayWidth = CGFloat(dimensions.width) * pixelAspectRatioValue
+                        let displayRatio = displayWidth / CGFloat(dimensions.height)
+                        print("  ⚠️ Non-square pixels detected!")
+                        print("  - Display size should be: \(Int(displayWidth))x\(dimensions.height)")
+                        print("  - Display aspect ratio: \(String(format: "%.3f", displayRatio)) (16:9 = 1.778)")
+                      }
+                    }
+                  }
+                } catch {
+                  print("❌ Error checking video metadata: \(error)")
+                }
               }
 
               // visionOS-specific fix: Start playback first, then seek
