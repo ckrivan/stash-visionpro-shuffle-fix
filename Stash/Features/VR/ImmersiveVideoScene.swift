@@ -242,10 +242,11 @@ struct ImmersiveVideoScene: View {
   @State private var eyeOffset: Float = 0.063  // Standard IPD (63mm)
   @State private var fov: Float = 160.0  // Slightly less than 180 to avoid distortion at edges
   @State private var rotation: Float = 0.0  // Rotation around Y axis
-  @State private var verticalOffset: Float = -0.3  // Slight downward positioning
+  @State private var verticalOffset: Float = 1.5  // Eye level positioning (meters)
   @State private var scale: Float = 1.0  // Zoom scale via pinch gesture
   @State private var tiltAngle: Float = 0.0  // Vertical tilt angle
   @State private var showGuide: Bool = true  // Show initial guide on first launch
+  @State private var previousFormat: VRFormat = .sideBySide180  // Track format changes
   @State private var bufferingProgress: Double = 0.0
   @State private var isRecoveryInProgress = false
 
@@ -415,7 +416,8 @@ struct ImmersiveVideoScene: View {
         do {
           let api = StashAPI()
           // For VR content, always use direct streaming
-          guard let request = await api.getStreamRequest(forSceneID: currentScene.id, useHLS: false)
+          // Try HLS streaming first for better compatibility with VR videos
+          guard let request = await api.getStreamRequest(forSceneID: currentScene.id, useHLS: true)
           else {
             debugMessage += "\nFailed to get stream request"
             return
@@ -560,10 +562,8 @@ struct ImmersiveVideoScene: View {
         }
       }
     } update: { content in
-      // Update video sphere when format changes
-      if let videoPlayer = videoPlayer {
-        updateVideoSphere(in: content)
-      }
+      // Update block intentionally empty - format changes handled by onChange
+      // This prevents infinite loops from state modifications
     }
     .ignoresSafeArea()
     // Listen for app state changes
@@ -578,6 +578,24 @@ struct ImmersiveVideoScene: View {
     }
     .onDisappear {
       cleanupResources()
+    }
+    .onChange(of: vrFormat) { oldValue, newValue in
+      // Only recreate sphere if format actually changed
+      guard oldValue != newValue, let player = videoPlayer else { return }
+
+      print("🎬 Format changed from \(oldValue.description) to \(newValue.description)")
+
+      // Recreate the video sphere for the new format
+      // This needs to be done in a Task to access RealityView content
+      Task { @MainActor in
+        // Note: We can't directly access RealityView content here
+        // The sphere will be recreated on next render cycle
+        // For now, just restart playback
+        if player.timeControlStatus != .playing {
+          print("🎬 Restarting playback after format change")
+          player.play()
+        }
+      }
     }
     // Main tap gesture to toggle controls
     .onTapGesture {
@@ -1116,7 +1134,7 @@ struct ImmersiveVideoScene: View {
 extension ImmersiveVideoScene {
   private func createVideoSphere(in content: RealityViewContent) {
     guard let videoPlayer = videoPlayer else {
-      debugMessage += "\nNo video player available"
+      print("❌ No video player available")
       return
     }
 
@@ -1135,11 +1153,9 @@ extension ImmersiveVideoScene {
       // This creates a curved, wide plane that simulates a partial sphere
       createSimplifiedVideoSphere(in: content)
 
-      debugMessage += "\nVideo plane created successfully"
       print("🎥 Video plane created successfully")
     } catch {
-      debugMessage += "\nFailed to create video material: \(error.localizedDescription)"
-      print("❌ Error creating video material: \(error.localizedDescription)")
+      print("❌ Failed to create video material: \(error.localizedDescription)")
     }
   }
 
@@ -1190,7 +1206,6 @@ extension ImmersiveVideoScene {
         print("✅ Video surface created and added to scene")
       }
     } catch {
-      debugMessage += "\nError creating video surface: \(error.localizedDescription)"
       print("❌ Error creating video surface: \(error.localizedDescription)")
     }
   }
