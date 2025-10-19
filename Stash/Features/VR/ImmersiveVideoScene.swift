@@ -160,12 +160,61 @@ class PlayerMonitor {
 }
 
 enum VRFormat: String, CaseIterable {
-  case sideBySide = "Side-by-Side"
-  case overUnder = "Over-Under"
+  case sideBySide180 = "SBS 180°"
+  case sideBySide360 = "SBS 360°"
+  case overUnder180 = "OU 180°"
+  case overUnder360 = "OU 360°"
+  case fisheye180 = "Fisheye 180°"
+  case fisheye360 = "Fisheye 360°"
   case mono = "Mono (Not VR)"
 
   var description: String {
     return self.rawValue
+  }
+
+  var is180: Bool {
+    switch self {
+    case .sideBySide180, .overUnder180, .fisheye180:
+      return true
+    default:
+      return false
+    }
+  }
+
+  var is360: Bool {
+    switch self {
+    case .sideBySide360, .overUnder360, .fisheye360:
+      return true
+    default:
+      return false
+    }
+  }
+
+  var isFisheye: Bool {
+    switch self {
+    case .fisheye180, .fisheye360:
+      return true
+    default:
+      return false
+    }
+  }
+
+  var isSideBySide: Bool {
+    switch self {
+    case .sideBySide180, .sideBySide360:
+      return true
+    default:
+      return false
+    }
+  }
+
+  var isOverUnder: Bool {
+    switch self {
+    case .overUnder180, .overUnder360:
+      return true
+    default:
+      return false
+    }
   }
 }
 
@@ -188,12 +237,14 @@ struct ImmersiveVideoScene: View {
   @State private var showControls = true
   @State private var showDebugOverlay = false
   @State private var hideControlsTask: Task<Void, Never>?
-  @State private var vrFormat: VRFormat = .sideBySide
+  @State private var vrFormat: VRFormat = .sideBySide180
   @State private var sphereRadius: Float = 6.0  // More comfortable viewing distance
   @State private var eyeOffset: Float = 0.063  // Standard IPD (63mm)
   @State private var fov: Float = 160.0  // Slightly less than 180 to avoid distortion at edges
   @State private var rotation: Float = 0.0  // Rotation around Y axis
   @State private var verticalOffset: Float = -0.3  // Slight downward positioning
+  @State private var scale: Float = 1.0  // Zoom scale via pinch gesture
+  @State private var tiltAngle: Float = 0.0  // Vertical tilt angle
   @State private var showGuide: Bool = true  // Show initial guide on first launch
   @State private var bufferingProgress: Double = 0.0
   @State private var isRecoveryInProgress = false
@@ -312,40 +363,48 @@ struct ImmersiveVideoScene: View {
       let tagNames = currentScene.tags?.map { $0.name.lowercased() } ?? []
       debugMessage += "\nTags: \(tagNames.joined(separator: ", "))"
 
-      // Consider all videos in VR library as VR content
-      let isVRContent = true
+      // Check title for format hints
+      let title = (currentScene.title ?? "").lowercased()
 
+      // Detect 180 vs 360
+      let is180 = tagNames.contains { $0.contains("180") || $0.contains("180°") }
+        || title.contains("180")
+      let is360 = tagNames.contains { $0.contains("360") || $0.contains("360°") }
+        || title.contains("360")
+
+      // Detect fisheye
+      let isFisheye = tagNames.contains {
+        $0.contains("fisheye") || $0.contains("fish eye") || $0.contains("eac")
+          || $0.contains("equiangular")
+      } || title.contains("fisheye") || title.contains("fish eye")
+
+      // Detect SBS vs OU
       let isOverUnder = tagNames.contains {
         $0.contains("over-under") || $0.contains("tb") || $0.contains("top-bottom")
-          || $0.contains("topbottom")
-      }
+          || $0.contains("topbottom") || $0.contains("ou")
+      } || title.contains("tb") || title.contains("top bottom") || title.contains("over under")
+        || title.contains("ou")
 
       let isSideBySide = tagNames.contains {
         $0.contains("side-by-side") || $0.contains("sbs") || $0.contains("lr")
           || $0.contains("left-right")
-      }
+      } || title.contains("sbs") || title.contains("side by side")
+        || title.contains("side-by-side")
 
-      // Also check title for format hints
-      let title = currentScene.title.lowercased()
-      let titleIndicatesSBS =
-        title.contains("sbs") || title.contains("side by side") || title.contains("side-by-side")
-      let titleIndicatesOU =
-        title.contains("tb") || title.contains("top bottom") || title.contains("over under")
-        || title.contains("ou")
-
-      // Set initial format based on detection
-      if isOverUnder || titleIndicatesOU {
-        vrFormat = .overUnder
-        debugMessage += "\nDetected format: Over-Under"
-      } else if isSideBySide || titleIndicatesSBS {
-        vrFormat = .sideBySide
-        debugMessage += "\nDetected format: Side-by-Side"
-      } else if isVRContent {
-        vrFormat = .sideBySide  // Default to side-by-side for VR content
-        debugMessage += "\nDefault to Side-by-Side for VR content"
+      // Set initial format based on detection with smart defaults
+      if isFisheye {
+        vrFormat = is360 ? .fisheye360 : .fisheye180
+        debugMessage += "\nDetected format: \(vrFormat.description)"
+      } else if isOverUnder {
+        vrFormat = is360 ? .overUnder360 : .overUnder180
+        debugMessage += "\nDetected format: \(vrFormat.description)"
+      } else if isSideBySide {
+        vrFormat = is360 ? .sideBySide360 : .sideBySide180
+        debugMessage += "\nDetected format: \(vrFormat.description)"
       } else {
-        vrFormat = .mono
-        debugMessage += "\nDetected format: Mono (Not VR)"
+        // Default to SBS 180° for VR content without specific tags
+        vrFormat = is360 ? .sideBySide360 : .sideBySide180
+        debugMessage += "\nDefault format: \(vrFormat.description)"
       }
 
       // Store a local reference to content to avoid capturing the inout parameter
@@ -413,12 +472,12 @@ struct ImmersiveVideoScene: View {
                 "\nVideo dimensions: \(dimensions.width) x \(dimensions.height), AR: \(aspectRatio)"
 
               // Auto-detect format based on aspect ratio if not already determined
-              if vrFormat == .sideBySide && aspectRatio < 1.0 {
-                vrFormat = .overUnder
-                debugMessage += "\nSwitched to Over-Under based on aspect ratio"
-              } else if vrFormat == .overUnder && aspectRatio > 2.0 {
-                vrFormat = .sideBySide
-                debugMessage += "\nSwitched to Side-by-Side based on aspect ratio"
+              if vrFormat.isSideBySide && aspectRatio < 1.0 {
+                vrFormat = vrFormat.is360 ? .overUnder360 : .overUnder180
+                debugMessage += "\nSwitched to \(vrFormat.description) based on aspect ratio"
+              } else if vrFormat.isOverUnder && aspectRatio > 2.0 {
+                vrFormat = vrFormat.is360 ? .sideBySide360 : .sideBySide180
+                debugMessage += "\nSwitched to \(vrFormat.description) based on aspect ratio"
               }
             }
           } catch {
@@ -532,7 +591,7 @@ struct ImmersiveVideoScene: View {
     }
     // Add gesture handlers for the immersive experience
     .gesture(
-      // Rotate left/right
+      // Rotate left/right with drag
       DragGesture()
         .onChanged { value in
           // Convert drag to rotation
@@ -540,9 +599,57 @@ struct ImmersiveVideoScene: View {
           rotation += rotationDelta
 
           // Update sphere orientation
-          sphereEntity?.orientation = .init(angle: rotation, axis: [0, 1, 0])
+          updateSphereTransform()
 
           // Show controls when gesturing
+          withAnimation {
+            showControls = true
+          }
+          Task {
+            await scheduleControlsHide()
+          }
+        }
+    )
+    .gesture(
+      // Two-hand pinch to zoom
+      MagnifyGesture()
+        .onChanged { value in
+          // Update scale based on magnification
+          scale = Float(value.magnification)
+
+          // Clamp scale to reasonable range (0.5x to 3x)
+          scale = max(0.5, min(3.0, scale))
+
+          // Update sphere transform
+          updateSphereTransform()
+
+          // Show controls
+          withAnimation {
+            showControls = true
+          }
+          Task {
+            await scheduleControlsHide()
+          }
+        }
+        .onEnded { _ in
+          // Keep the final scale value
+        }
+    )
+    .simultaneousGesture(
+      // One-hand vertical drag for tilt (when pinching)
+      DragGesture(minimumDistance: 10)
+        .onChanged { value in
+          // Vertical drag controls tilt
+          let verticalDelta = Float(value.translation.height) * 0.005
+          tiltAngle -= verticalDelta  // Negative because drag down should tilt up
+
+          // Clamp tilt to reasonable range (-45° to +45°)
+          tiltAngle = max(-0.785, min(0.785, tiltAngle))  // ±π/4 radians
+
+          // Update sphere transform
+          updateSphereTransform()
+
+          // Show controls
           withAnimation {
             showControls = true
           }
@@ -608,19 +715,31 @@ struct ImmersiveVideoScene: View {
             }
             .buttonStyle(.plain)
 
-            // Format selector - Quick toggle between SBS and OU
+            // Format selector - Cycle through formats
             Button(action: {
-              if vrFormat == .sideBySide {
-                vrFormat = .overUnder
-              } else if vrFormat == .overUnder {
-                vrFormat = .sideBySide
-              } else {
-                vrFormat = .sideBySide  // Default to SBS
+              // Cycle: SBS180 → SBS360 → OU180 → OU360 → Fisheye180 → Fisheye360 → back to SBS180
+              switch vrFormat {
+              case .sideBySide180:
+                vrFormat = .sideBySide360
+              case .sideBySide360:
+                vrFormat = .overUnder180
+              case .overUnder180:
+                vrFormat = .overUnder360
+              case .overUnder360:
+                vrFormat = .fisheye180
+              case .fisheye180:
+                vrFormat = .fisheye360
+              case .fisheye360:
+                vrFormat = .sideBySide180
+              case .mono:
+                vrFormat = .sideBySide180
               }
             }) {
-              HStack {
-                Text(vrFormat.description)
+              HStack(spacing: 4) {
                 Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                Text(vrFormat.description)
+                  .font(.caption)
+                  .fontWeight(.medium)
               }
               .padding(.horizontal, 10)
               .padding(.vertical, 6)
@@ -718,9 +837,11 @@ struct ImmersiveVideoScene: View {
               }
 
               // Gesture explanation text
-              Text("Gestures: Drag left/right to rotate • Tap to show/hide controls")
-                .font(.footnote)
-                .foregroundColor(.secondary)
+              Text(
+                "Gestures: Drag horizontal (rotate) • Drag vertical (tilt) • Two-hand pinch (zoom)"
+              )
+              .font(.footnote)
+              .foregroundColor(.secondary)
             }
             .padding()
             .background(.ultraThinMaterial)
@@ -744,12 +865,15 @@ struct ImmersiveVideoScene: View {
             VStack(alignment: .leading, spacing: 10) {
               Label("Tap screen to show/hide controls", systemImage: "hand.tap")
               Label("Drag left/right to rotate view", systemImage: "arrow.left.and.right")
+              Label("Drag up/down to tilt view", systemImage: "arrow.up.and.down")
+              Label("Pinch with two hands to zoom", systemImage: "hand.pinch")
+                .foregroundColor(.blue)
               Label(
-                "Format button switches between Side-by-Side and Over-Under",
+                "Format button cycles through SBS/OU/Fisheye and 180°/360°",
                 systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
               Divider()
               Label(
-                "Use the 'Random Jump' button to shuffle to a random video starting at a random position",
+                "Use 'Random Jump' to shuffle videos with random start position",
                 systemImage: "shuffle"
               )
               .foregroundColor(.purple)
@@ -932,6 +1056,19 @@ struct ImmersiveVideoScene: View {
     }
   }
 
+  private func updateSphereTransform() {
+    guard let entity = sphereEntity else { return }
+
+    // Combine rotation and tilt into a single transform
+    // First apply tilt around X axis, then rotation around Y axis
+    let tiltRotation = simd_quatf(angle: tiltAngle, axis: [1, 0, 0])
+    let yawRotation = simd_quatf(angle: rotation, axis: [0, 1, 0])
+    let combinedRotation = yawRotation * tiltRotation
+
+    entity.orientation = combinedRotation
+    entity.scale = [scale, scale, scale]
+  }
+
   private func cleanupResources() {
     print("🧹 Cleaning up VR video resources")
 
@@ -1043,9 +1180,9 @@ extension ImmersiveVideoScene {
       // Create model entity with video material
       sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
 
-      // Position and orientation
+      // Position, orientation, and scale
       sphereEntity?.position = [0, verticalOffset, 0]
-      sphereEntity?.orientation = .init(angle: rotation, axis: [0, 1, 0])
+      updateSphereTransform()
 
       // Add to root entity
       if let sphereEntity = sphereEntity {
@@ -1065,12 +1202,12 @@ extension ImmersiveVideoScene {
     // Create a curved plane with more reliable UVs
     print("🔨 Creating curved surface for format: \(format)")
 
-    // Vertical and horizontal segments (more segments = smoother curve)
-    let vSegments = 16
-    let hSegments = 32
+    // Vertical and horizontal segments (more segments = smoother curve and fisheye)
+    let vSegments = format.isFisheye ? 32 : 16  // More segments for fisheye distortion
+    let hSegments = format.is360 ? 64 : 32  // More segments for 360
 
-    // Calculate the horizontal field of view in radians (180 degrees for a half-cylinder)
-    let hFov = Float.pi * 0.8  // 144 degrees wide (good compromise)
+    // Calculate the horizontal field of view in radians
+    let hFov: Float = format.is360 ? Float.pi * 2.0 : Float.pi  // 360° or 180°
 
     var vertices: [SIMD3<Float>] = []
     var uvs: [SIMD2<Float>] = []
@@ -1101,19 +1238,59 @@ extension ImmersiveVideoScene {
         var texU: Float = 0
         var texV: Float = 0
 
-        switch format {
-        case .sideBySide:
-          // Map to left half of the texture for SBS format
-          texU = Float(hIdx) / Float(hSegments) * 0.5
-          texV = 1.0 - Float(vIdx) / Float(vSegments)  // Flip V to match video orientation
-        case .overUnder:
-          // Map to top half of the texture for OU format
-          texU = Float(hIdx) / Float(hSegments)
-          texV = (1.0 - Float(vIdx) / Float(vSegments)) * 0.5
-        case .mono:
-          // Use full texture for mono
-          texU = Float(hIdx) / Float(hSegments)
-          texV = 1.0 - Float(vIdx) / Float(vSegments)
+        if format.isFisheye {
+          // Fisheye projection: convert from spherical to radial coordinates
+          let normalizedH = Float(hIdx) / Float(hSegments)
+          let normalizedV = Float(vIdx) / Float(vSegments)
+
+          // Convert to centered coordinates (-0.5 to 0.5)
+          let centerU = normalizedH - 0.5
+          let centerV = normalizedV - 0.5
+
+          // Calculate radial distance from center
+          let radius = sqrt(centerU * centerU + centerV * centerV)
+          let theta = atan2(centerV, centerU)
+
+          // Apply fisheye distortion (equidistant projection)
+          let fovFactor: Float = format.is360 ? Float.pi : (Float.pi / 2.0)
+          let r = radius * fovFactor
+
+          // Convert back to texture coordinates
+          let fisheyeU = r * cos(theta)
+          let fisheyeV = r * sin(theta)
+
+          // Map to texture space
+          if format.isSideBySide {
+            // Left eye uses left half of texture for SBS
+            texU = (fisheyeU + 0.5) * 0.5
+            texV = 1.0 - (fisheyeV + 0.5)
+          } else if format.isOverUnder {
+            // Top half for over-under
+            texU = fisheyeU + 0.5
+            texV = (1.0 - (fisheyeV + 0.5)) * 0.5
+          } else {
+            texU = fisheyeU + 0.5
+            texV = 1.0 - (fisheyeV + 0.5)
+          }
+        } else {
+          // Standard rectilinear projection
+          switch format {
+          case .sideBySide180, .sideBySide360:
+            // Map to left half of the texture for SBS format
+            texU = Float(hIdx) / Float(hSegments) * 0.5
+            texV = 1.0 - Float(vIdx) / Float(vSegments)
+          case .overUnder180, .overUnder360:
+            // Map to top half of the texture for OU format
+            texU = Float(hIdx) / Float(hSegments)
+            texV = (1.0 - Float(vIdx) / Float(vSegments)) * 0.5
+          case .mono:
+            // Use full texture for mono
+            texU = Float(hIdx) / Float(hSegments)
+            texV = 1.0 - Float(vIdx) / Float(vSegments)
+          default:
+            texU = Float(hIdx) / Float(hSegments)
+            texV = 1.0 - Float(vIdx) / Float(vSegments)
+          }
         }
 
         uvs.append([texU, texV])

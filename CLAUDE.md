@@ -109,9 +109,49 @@ ALSO VERY IMPORTANT WHEN WE ADD NEW FEATURES MAKE SURE TO NOTATE THEM HERE ONCE 
     - Green house icon for local network
     - Orange network icon for remote connections
     - Tap indicator for detailed network information and optimization status
-  
+
   **Files Updated**:
   - `ConnectionView.swift` - Uses hardcoded credentials, auto-connects
-  - `ContentView.swift` - Updated ServerConnectionView with hardcoded values  
+  - `ContentView.swift` - Updated ServerConnectionView with hardcoded values
   - `MainVisionView.swift` - Added VPN status indicator to sidebar
   - `VPNStatusIndicator.swift` - New component showing network status with details popover
+
+## VR Immersive Player ✅
+  - **Full Format Support**: Automatic detection and rendering of VR video formats
+    - Side-by-Side (SBS) 180° and 360°
+    - Over-Under (OU) 180° and 360°
+    - Fisheye 180° and 360° with equidistant projection correction
+  - **Format Detection**: Intelligent auto-detection from scene tags and titles
+    - Tags: "180", "360", "sbs", "ou", "fisheye", "eac", etc.
+    - Aspect ratio validation and format switching
+    - Manual format cycling via on-screen button
+  - **Peripheral Coverage**: Full 180° (π radians) or 360° (2π radians) field of view
+    - Curved mesh surface with adaptive segment counts
+    - 32+ segments for fisheye (smooth distortion correction)
+    - 64+ segments for 360° (complete wraparound)
+  - **Gesture Controls**: Natural Vision Pro hand gesture support
+    - **Horizontal drag**: Rotate view left/right (yaw)
+    - **Vertical drag**: Tilt view up/down (pitch ±45°)
+    - **Two-hand pinch**: Zoom in/out (0.5x to 3x scale)
+    - All gestures work simultaneously and smoothly
+  - **Fisheye Projection**: Proper equidistant projection correction
+    - Radial distortion mapping from spherical to texture coordinates
+    - Supports both SBS and OU fisheye layouts
+    - Adaptive FOV calculation based on 180°/360° detection
+  - **Playback Features**:
+    - Random jump with random start position
+    - Play/pause controls with buffer monitoring
+    - Auto-recovery from playback stalls (3-step fallback)
+    - Format picker for manual override
+
+  **Implementation Files**:
+  - `ImmersiveVideoScene.swift` - Main VR player with RealityKit mesh rendering
+  - `VRLibraryView.swift` - VR content browser with tag-based filtering
+  - `VRFormat` enum - Format detection and properties (is180, is360, isFisheye, etc.)
+
+  **Key Technical Details**:
+  - Uses RealityKit VideoMaterial with AVPlayer for video rendering
+  - Curved mesh with proper UV mapping for each format type
+  - Quaternion-based rotation (yaw × pitch) for smooth orientation
+  - Scale transformation applied to mesh entity for zoom
+  - MagnifyGesture and DragGesture for multi-touch interaction
