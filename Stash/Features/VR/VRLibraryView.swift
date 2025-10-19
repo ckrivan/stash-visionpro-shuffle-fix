@@ -97,16 +97,21 @@ struct VRLibraryView: View {
     isLoading = true
     error = nil
     debugMessage = "Finding VR tag ID..."
+    print("🔍 VRLibraryView: Searching for VR tag...")
 
     do {
       let api = StashAPI()
       let tags = try await api.searchTags(query: "vr")
+      print("🔍 VRLibraryView: Found \(tags.count) tags matching 'vr'")
+      tags.forEach { print("   - Tag: '\($0.name)' (ID: \($0.id))") }
 
       if let vrTag = tags.first(where: { $0.name.lowercased() == "vr" }) {
         vrTagID = vrTag.id
         debugMessage = "Found VR tag with ID: \(vrTag.id)"
+        print("✅ VRLibraryView: Using VR tag ID: \(vrTag.id)")
         await loadScenes()
       } else {
+        print("⚠️ VRLibraryView: No exact 'vr' tag found, looking for related tags...")
         // Try to find tags containing VR, 180, or 360
         let vrRelatedTags = tags.filter {
           $0.name.lowercased().contains("vr") || $0.name.lowercased().contains("180")
@@ -135,6 +140,7 @@ struct VRLibraryView: View {
         }
       }
     } catch {
+      print("❌ VRLibraryView: Error finding VR tag: \(error)")
       self.error = error
       debugMessage = "Error finding VR tag: \(error.localizedDescription)"
       isLoading = false
@@ -222,6 +228,7 @@ struct VRLibraryView: View {
       }
 
       // Decode the response
+      print("🔍 VRLibraryView: Decoding scene response...")
       let decoder = JSONDecoder()
       let response = try decoder.decode(FindScenesResponse.self, from: data)
 
@@ -229,8 +236,14 @@ struct VRLibraryView: View {
       hasMorePages = response.data.findScenes.scenes.count >= 20
       debugMessage =
         "Loaded \(response.data.findScenes.scenes.count) VR scenes (total: \(response.data.findScenes.count))"
+      print(
+        "✅ VRLibraryView: Loaded \(scenes.count) scenes, hasMore: \(hasMorePages)")
       isLoading = false
     } catch {
+      print("❌ VRLibraryView: Error loading scenes: \(error)")
+      if let dataString = String(data: data, encoding: .utf8) {
+        print("   Response data: \(dataString.prefix(500))")
+      }
       self.error = error
       debugMessage = "Error loading scenes: \(error.localizedDescription)"
       isLoading = false
