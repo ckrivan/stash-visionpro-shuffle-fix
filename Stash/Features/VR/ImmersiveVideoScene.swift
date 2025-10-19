@@ -1334,15 +1334,16 @@ extension ImmersiveVideoScene {
         let bottomLeft = (vIdx + 1) * (hSegments + 1) + hIdx
         let bottomRight = bottomLeft + 1
 
-        // First triangle
+        // First triangle - REVERSED winding for inside viewing
+        // For viewing from inside, triangles must be counter-clockwise from inside
         indices.append(UInt32(topLeft))
-        indices.append(UInt32(bottomLeft))
         indices.append(UInt32(topRight))
+        indices.append(UInt32(bottomLeft))
 
-        // Second triangle
+        // Second triangle - REVERSED winding for inside viewing
         indices.append(UInt32(topRight))
-        indices.append(UInt32(bottomLeft))
         indices.append(UInt32(bottomRight))
+        indices.append(UInt32(bottomLeft))
       }
     }
 
