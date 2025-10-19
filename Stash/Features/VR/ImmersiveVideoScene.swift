@@ -1187,39 +1187,25 @@ extension ImmersiveVideoScene {
   private func createSimplifiedVideoSphere(in content: RealityViewContent) {
     guard let videoMaterial = videoMaterial else { return }
 
-    // Use a simplified approach that works more reliably on visionOS
-    // Instead of a complete sphere, create a curved surface with correct UVs
+    print("🎥 Creating SIMPLE sphere test with RealityKit built-in mesh")
 
-    // Create a curved plane that fills most of the field of view
-    let curvedPlane = createCurvedSurface(radius: sphereRadius, format: vrFormat)
+    // SIMPLE TEST: Use RealityKit's built-in sphere
+    // Radius of 10 meters so user is inside looking out
+    let mesh = MeshResource.generateSphere(radius: 10.0)
 
-    do {
-      // Create mesh descriptor
-      var meshDescriptor = MeshDescriptor()
-      meshDescriptor.positions = MeshBuffer(curvedPlane.vertices)
-      meshDescriptor.textureCoordinates = MeshBuffer(curvedPlane.uvs)
-      meshDescriptor.primitives = .triangles(curvedPlane.indices)
+    // Create model entity with video material
+    sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
 
-      // Add normals for correct lighting
-      meshDescriptor.normals = MeshBuffer(curvedPlane.normals)
+    // Flip scale to invert the sphere (makes normals face inward)
+    sphereEntity?.scale = [-1, 1, 1]  // Negative X flips the sphere inside-out
 
-      // Generate mesh resource
-      let mesh = try MeshResource.generate(from: [meshDescriptor])
+    // Position at user location
+    sphereEntity?.position = [0, verticalOffset, 0]
 
-      // Create model entity with video material
-      sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
-
-      // Position, orientation, and scale
-      sphereEntity?.position = [0, verticalOffset, 0]
-      updateSphereTransform()
-
-      // Add to root entity
-      if let sphereEntity = sphereEntity {
-        rootEntity.addChild(sphereEntity)
-        print("✅ Video surface created and added to scene")
-      }
-    } catch {
-      print("❌ Error creating video surface: \(error.localizedDescription)")
+    // Add to root entity
+    if let sphereEntity = sphereEntity {
+      rootEntity.addChild(sphereEntity)
+      print("✅ Video sphere created with INVERTED built-in sphere (scale: -1, 1, 1)")
     }
   }
 
