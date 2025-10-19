@@ -242,7 +242,7 @@ struct ImmersiveVideoScene: View {
   @State private var eyeOffset: Float = 0.063  // Standard IPD (63mm)
   @State private var fov: Float = 160.0  // Slightly less than 180 to avoid distortion at edges
   @State private var rotation: Float = 0.0  // Rotation around Y axis
-  @State private var verticalOffset: Float = 1.5  // Eye level positioning (meters)
+  @State private var verticalOffset: Float = 0.0  // User centered in sphere (0 = eye level in immersive space)
   @State private var scale: Float = 1.0  // Zoom scale via pinch gesture
   @State private var tiltAngle: Float = 0.0  // Vertical tilt angle
   @State private var showGuide: Bool = true  // Show initial guide on first launch
@@ -431,22 +431,35 @@ struct ImmersiveVideoScene: View {
           debugMessage += "\nStreaming URL: \(url.absoluteString)"
           print("🎬 Streaming VR video from: \(url.absoluteString)")
 
-          // Create asset with request headers and more robust configuration
-          let asset = AVURLAsset(
-            url: url,
-            options: [
-              "AVURLAssetHTTPHeaderFieldsKey": request.allHTTPHeaderFields ?? [:],
-              "AVURLAssetOutOfBandMIMETypeKey": "video/mp4",
-              "AVURLAssetAllowsExpensiveNetworkAccess": true,
-              "AVURLAssetAllowsConstrainedNetworkAccess": true
-            ])
+          // Create asset with enhanced HLS configuration (matching regular player)
+          let assetOptions: [String: Any] = [
+            "AVURLAssetHTTPHeaderFieldsKey": request.allHTTPHeaderFields ?? [:],
+            "AVURLAssetAllowsExpensiveNetworkAccess": true,
+            "AVURLAssetAllowsConstrainedNetworkAccess": true,
+            "AVURLAssetUsesNSURLSessionKey": true,  // Important for HLS
+            "AVURLAssetPreferPreciseDurationAndTimingKey": true,
+            "AVURLAssetHTTPUserAgentKey": "Mozilla/5.0 (Apple Vision; Vision Pro) AppleWebKit/605.1.15",
+            "AVURLAssetHTTPMaximumConnectionsPerHostKey": NSNumber(value: 5),
+            "AVURLAssetHTTPMayUsePipeliningKey": NSNumber(value: true)
+          ]
 
-          // Create a more robust player item with prefetched resources
+          let asset = AVURLAsset(url: url, options: assetOptions)
+
+          // Create player item with enhanced buffering for HEVC/HLS
           let playerItem = AVPlayerItem(asset: asset)
 
-          // Improve buffering behavior
-          playerItem.preferredForwardBufferDuration = 10  // Buffer 10 seconds ahead
+          // Use longer buffer for HEVC VR videos (they're large)
+          playerItem.preferredForwardBufferDuration = 60  // 60 seconds for VR
           playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+
+          // Force enable video tracks (prevents black screen with audio)
+          _ = playerItem.tracks.filter { track in
+            if track.assetTrack?.mediaType.rawValue == "vide" {
+              track.isEnabled = true
+              print("🎬 VR: Force-enabled video track")
+            }
+            return track.isEnabled
+          }
 
           // Set up player with improved configuration
           let player = AVPlayer(playerItem: playerItem)
