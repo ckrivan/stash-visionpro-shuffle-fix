@@ -204,6 +204,7 @@ extension StashScene {
     let name: String
     let scene_count: Int?
     let image_count: Int?
+    let scene_marker_count: Int?
   }
 }
 
@@ -213,7 +214,8 @@ extension StashScene.Tag {
     id: "1",
     name: "Example Tag",
     scene_count: 5,
-    image_count: 10
+    image_count: 10,
+    scene_marker_count: 3
   )
 }
 

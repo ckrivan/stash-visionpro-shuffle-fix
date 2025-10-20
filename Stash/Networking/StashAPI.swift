@@ -374,11 +374,14 @@ class StashAPI: ObservableObject {
         print("   - Video codec: \(codecInfo)")
         print("   - Uses problematic codec: \(isHEVCVideo)")
 
-        // For VR content, always use direct streaming regardless of what was requested
-        if isVRContent && shouldUseHLS {
-          print("🎬 Overriding to use direct streaming for VR content")
-          // Override to direct streaming for VR content
+        // For VR content with HEVC/problematic codecs, KEEP HLS (needs transcoding)
+        // For VR content with H.264, prefer direct streaming (best performance)
+        if isVRContent && !isHEVCVideo && shouldUseHLS {
+          print("🎬 VR content with compatible codec - using direct streaming for best performance")
           shouldUseHLS = false
+        } else if isVRContent && isHEVCVideo {
+          print("🎬 VR content with HEVC codec - using HLS transcoding for compatibility")
+          shouldUseHLS = true
         }
 
         // For HEVC videos with HLS, use a transcoded resolution for better compatibility
@@ -1504,7 +1507,10 @@ class StashAPI: ObservableObject {
     request.setValue("keep-alive", forHTTPHeaderField: "Connection")
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue(serverAddress, forHTTPHeaderField: "Origin")
-    request.httpBody = query.data(using: .utf8)
+
+    // Wrap query in proper GraphQL request format
+    let graphQLRequest = ["query": query]
+    request.httpBody = try JSONEncoder().encode(graphQLRequest)
 
     let (data, _) = try await URLSession.shared.data(for: request)
     return data

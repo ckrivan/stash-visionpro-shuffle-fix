@@ -2,6 +2,7 @@ import SwiftUI
 
 struct XBVRLibraryView: View {
   @StateObject private var xbvrService = XBVRService.shared
+  @EnvironmentObject private var xbvrPlayerState: XBVRPlayerState
   @Environment(\.openImmersiveSpace) private var openImmersiveSpace
   @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
 
@@ -9,8 +10,6 @@ struct XBVRLibraryView: View {
   @State private var isLoading = false
   @State private var error: Error?
   @State private var searchText = ""
-  @State private var selectedVideo: XBVRVideo?
-  @State private var showingPlayer = false
   @State private var currentPage = 1
   @State private var hasMorePages = true
 
@@ -33,6 +32,8 @@ struct XBVRLibraryView: View {
   }
 
   var body: some View {
+    let _ = print("🎯 XBVRLibraryView.body - isConnected: \(xbvrService.isConnected), videos.count: \(videos.count)")
+
     NavigationStack {
       ZStack {
         if xbvrService.isConnected {
@@ -78,9 +79,12 @@ struct XBVRLibraryView: View {
       }
       .searchable(text: $searchText, prompt: "Search videos...")
       .onAppear {
+        print("🎯 XBVRLibraryView.onAppear - isConnected: \(xbvrService.isConnected), videos.isEmpty: \(videos.isEmpty)")
         if xbvrService.isConnected && videos.isEmpty {
+          print("🎯 Loading videos...")
           Task { await loadVideos() }
         } else if !xbvrService.isConnected {
+          print("🎯 Connecting to XBVR...")
           // Try to connect automatically with hardcoded settings
           Task { await connectToXBVR() }
         }
@@ -88,9 +92,24 @@ struct XBVRLibraryView: View {
       .sheet(isPresented: $showConnectionSettings) {
         connectionSettingsSheet
       }
-      .sheet(item: $selectedVideo) { video in
-        VRPlayerView(video: video)
-      }
+    }
+  }
+
+  // MARK: - Video Playback
+
+  private func playVideo(_ video: XBVRVideo) async {
+    print("🎬 Opening immersive space for video: \(video.title)")
+    xbvrPlayerState.currentVideo = video
+    let result = await openImmersiveSpace(id: "XBVRPlayerSpace")
+    switch result {
+    case .opened:
+      print("✅ Immersive space opened successfully")
+    case .error:
+      print("❌ Failed to open immersive space - error")
+    case .userCancelled:
+      print("⚠️ User cancelled immersive space")
+    @unknown default:
+      print("⚠️ Unknown immersive space result: \(result)")
     }
   }
 
@@ -105,8 +124,9 @@ struct XBVRLibraryView: View {
       ) {
         ForEach(filteredVideos) { video in
           XBVRVideoCard(video: video) {
-            selectedVideo = video
-            showingPlayer = true
+            Task {
+              await playVideo(video)
+            }
           }
           .onAppear {
             // Load more when approaching end
@@ -345,8 +365,7 @@ struct XBVRLibraryView: View {
     do {
       let randomVideos = try await xbvrService.fetchRandomVideos(count: 1)
       if let randomVideo = randomVideos.first {
-        selectedVideo = randomVideo
-        showingPlayer = true
+        await playVideo(randomVideo)
       }
     } catch {
       self.error = error

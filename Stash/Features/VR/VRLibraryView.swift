@@ -78,8 +78,16 @@ struct VRLibraryView: View {
         }
       }
       .onAppear {
+        print("🎬 VRLibraryView appeared, scenes.isEmpty: \(scenes.isEmpty)")
         if scenes.isEmpty {
-          Task { await findVRTagID() }
+          // TEMP: Hardcode tag ID to test
+          vrTagID = "1024"
+          debugMessage = "Testing with hardcoded tag ID: 1024"
+          Task {
+            await loadScenes()
+            // Uncomment this to use tag search instead:
+            // await findVRTagID()
+          }
         }
       }
     }
@@ -97,16 +105,21 @@ struct VRLibraryView: View {
     isLoading = true
     error = nil
     debugMessage = "Finding VR tag ID..."
+    print("🔍 VRLibraryView: Searching for VR tag...")
 
     do {
       let api = StashAPI()
       let tags = try await api.searchTags(query: "vr")
+      print("🔍 VRLibraryView: Found \(tags.count) tags matching 'vr'")
+      tags.forEach { print("   - Tag: '\($0.name)' (ID: \($0.id))") }
 
       if let vrTag = tags.first(where: { $0.name.lowercased() == "vr" }) {
         vrTagID = vrTag.id
         debugMessage = "Found VR tag with ID: \(vrTag.id)"
+        print("✅ VRLibraryView: Using VR tag ID: \(vrTag.id)")
         await loadScenes()
       } else {
+        print("⚠️ VRLibraryView: No exact 'vr' tag found, looking for related tags...")
         // Try to find tags containing VR, 180, or 360
         let vrRelatedTags = tags.filter {
           $0.name.lowercased().contains("vr") || $0.name.lowercased().contains("180")
@@ -135,6 +148,7 @@ struct VRLibraryView: View {
         }
       }
     } catch {
+      print("❌ VRLibraryView: Error finding VR tag: \(error)")
       self.error = error
       debugMessage = "Error finding VR tag: \(error.localizedDescription)"
       isLoading = false
@@ -155,7 +169,7 @@ struct VRLibraryView: View {
     do {
       let api = StashAPI()
 
-      // Create a direct GraphQL query instead of using SceneFilterType
+      // Create a direct GraphQL query matching the web UI structure
       let graphQLQuery = """
         {
           findScenes(
@@ -166,7 +180,9 @@ struct VRLibraryView: View {
             scene_filter: {
               tags: {
                 value: ["\(tagID)"],
-                modifier: INCLUDES
+                excludes: [],
+                modifier: INCLUDES_ALL,
+                depth: 0
               }
             }
           ) {
@@ -206,8 +222,16 @@ struct VRLibraryView: View {
         }
         """
 
+      print("📤 VRLibraryView: Sending GraphQL query:")
+      print(graphQLQuery)
+
       // Use the public executeGraphQLQuery method
-      let data = try await api.executeGraphQLQuery(graphQLQuery)
+      let responseData = try await api.executeGraphQLQuery(graphQLQuery)
+
+      print("📥 VRLibraryView: Received response data length: \(responseData.count) bytes")
+      if let responseString = String(data: responseData, encoding: .utf8) {
+        print("📥 VRLibraryView: Response preview: \(responseString.prefix(500))")
+      }
 
       // Define a local response structure
       struct FindScenesResponse: Decodable {
@@ -222,15 +246,19 @@ struct VRLibraryView: View {
       }
 
       // Decode the response
+      print("🔍 VRLibraryView: Decoding scene response...")
       let decoder = JSONDecoder()
-      let response = try decoder.decode(FindScenesResponse.self, from: data)
+      let response = try decoder.decode(FindScenesResponse.self, from: responseData)
 
       scenes = response.data.findScenes.scenes
       hasMorePages = response.data.findScenes.scenes.count >= 20
       debugMessage =
         "Loaded \(response.data.findScenes.scenes.count) VR scenes (total: \(response.data.findScenes.count))"
+      print(
+        "✅ VRLibraryView: Loaded \(scenes.count) scenes, hasMore: \(hasMorePages)")
       isLoading = false
     } catch {
+      print("❌ VRLibraryView: Error loading scenes: \(error)")
       self.error = error
       debugMessage = "Error loading scenes: \(error.localizedDescription)"
       isLoading = false
@@ -256,7 +284,7 @@ struct VRLibraryView: View {
     do {
       let api = StashAPI()
 
-      // Create a direct GraphQL query for the next page
+      // Create a direct GraphQL query for the next page matching web UI structure
       let nextPage = currentPage + 1
       let graphQLQuery = """
         {
@@ -268,7 +296,9 @@ struct VRLibraryView: View {
             scene_filter: {
               tags: {
                 value: ["\(tagID)"],
-                modifier: INCLUDES
+                excludes: [],
+                modifier: INCLUDES_ALL,
+                depth: 0
               }
             }
           ) {

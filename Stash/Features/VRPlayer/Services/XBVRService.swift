@@ -126,8 +126,9 @@ class XBVRService: ObservableObject {
       for playlist in libraryResponse.scenes {
         print("📦 XBVR: Playlist '\(playlist.name)' has \(playlist.list.count) videos")
         for item in playlist.list {
-          // Extract scene ID from video_url (format: "/deovr/{scene-id}")
-          let sceneId = item.video_url.replacingOccurrences(of: "/deovr/", with: "")
+          // Extract scene ID from video_url
+          // Format can be either "/deovr/{scene-id}" or "http://host:port/deovr/{scene-id}"
+          let sceneId = item.video_url.components(separatedBy: "/deovr/").last ?? item.video_url
           print("   📝 video_url: '\(item.video_url)' -> sceneId: '\(sceneId)'")
 
           // Create lightweight XBVRVideo from list item (no full fetch yet)
@@ -374,15 +375,28 @@ private struct DeoVRScene: Codable {
 
   /// Convert DeoVR scene to XBVRVideo
   func toXBVRVideo() -> XBVRVideo {
+    // Log DeoVR scene metadata for debugging
+    print("🔍 DeoVR Scene Metadata:")
+    print("   screenType: \(screenType ?? "nil")")
+    print("   is3d: \(is3d ?? false)")
+    print("   stereoMode: \(stereoMode ?? "nil")")
+
     // Determine video type from screenType
     let videoType: XBVRVideo.VideoType
-    switch screenType?.lowercased() {
-    case "sphere":
+    let screenTypeLower = screenType?.lowercased() ?? ""
+
+    if screenTypeLower.contains("sphere") || screenTypeLower.contains("360") {
       videoType = .vr360
-    case "dome", "fisheye", "mkx200", "rf52":
+      print("   ✅ Detected as VR 360°")
+    } else if screenTypeLower.contains("dome") || screenTypeLower.contains("fisheye")
+              || screenTypeLower.contains("180") || screenTypeLower.contains("mkx200")
+              || screenTypeLower.contains("rf52") || is3d == true {
+      // If is3d is true but no screenType, assume VR180
       videoType = .vr180
-    default:
+      print("   ✅ Detected as VR 180°")
+    } else {
       videoType = .flat
+      print("   ⚠️ Defaulting to flat (no VR indicators found)")
     }
 
     // Determine stereo mode
