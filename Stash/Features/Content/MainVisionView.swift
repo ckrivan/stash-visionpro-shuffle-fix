@@ -122,6 +122,11 @@ struct MainVisionView: View {
     }
     .navigationSplitViewStyle(.prominentDetail)
     .preferredColorScheme(.dark)
+    // Reset window to default size when not playing video to prevent crash from large window
+    .frame(
+      idealWidth: appModel.isShowingPlayer ? nil : 1400,
+      idealHeight: appModel.isShowingPlayer ? nil : 900
+    )
     // visionOS 2.6: Use fullScreenCover for better presentation in volumes
     .fullScreenCover(isPresented: $appModel.isShowingPlayer) {
       if let scene = appModel.selectedScene {
@@ -169,6 +174,10 @@ struct MainVisionView: View {
 
             appModel.isShowingPlayer = false
             appModel.selectedScene = nil
+
+            // Window size will automatically reset to ideal size (1400×900)
+            // via the .frame() modifier on NavigationSplitView
+            print("🎬 Window size reset to default (1400×900) to prevent crash")
           }
       }
     }
