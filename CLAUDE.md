@@ -151,7 +151,18 @@ ALSO VERY IMPORTANT WHEN WE ADD NEW FEATURES MAKE SURE TO NOTATE THEM HERE ONCE 
 
   **Key Technical Details**:
   - Uses RealityKit VideoMaterial with AVPlayer for video rendering
-  - Curved mesh with proper UV mapping for each format type
+  - Custom curved mesh with proper UV mapping for each format type
   - Quaternion-based rotation (yaw × pitch) for smooth orientation
   - Scale transformation applied to mesh entity for zoom
   - MagnifyGesture and DragGesture for multi-touch interaction
+  - Format-aware mesh recreation when VR format changes
+  - 4-step playback recovery with HLS fallback for codec compatibility
+  - Proper window management with immersive space state tracking
+
+  **Recent Fixes (2025-10-25)**:
+  - ✅ Fixed video playback by restoring proper UV-mapped curved surface mesh
+  - ✅ Added HLS streaming fallback for codec compatibility (HEVC, VC-1, etc.)
+  - ✅ Fixed main interface visibility - properly hides during VR immersion
+  - ✅ Added immersive space state management (.open, .closed, .inTransition)
+  - ✅ Implemented dynamic mesh recreation when VR format changes
+  - ✅ Added 4-step playback recovery: resume → seek → reload → HLS fallback

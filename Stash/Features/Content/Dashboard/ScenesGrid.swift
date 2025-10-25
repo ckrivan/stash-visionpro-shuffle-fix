@@ -1,6 +1,5 @@
 import AVKit
 import RealityKit
-import RealityKitContent
 import SwiftUI
 
 struct ScenesGrid: View {

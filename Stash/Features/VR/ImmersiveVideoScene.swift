@@ -249,6 +249,8 @@ struct ImmersiveVideoScene: View {
   @State private var previousFormat: VRFormat = .sideBySide180  // Track format changes
   @State private var bufferingProgress: Double = 0.0
   @State private var isRecoveryInProgress = false
+  @State private var isUsingHLS = false  // Track streaming method
+  @State private var hlsFallbackAttempted = false  // Prevent infinite HLS retry loops
 
   // API for fetching random scenes
   @StateObject private var api = StashAPI()
@@ -637,19 +639,52 @@ struct ImmersiveVideoScene: View {
     }
     .onDisappear {
       cleanupResources()
+
+      // Reset immersive space state when leaving VR mode
+      Task { @MainActor in
+        appModel.immersiveSpaceState = .closed
+        appModel.isShowingImmersiveSpace = false
+        print("🎬 Exited immersive space - main interface restored")
+      }
     }
     .onChange(of: vrFormat) { oldValue, newValue in
       // Only recreate sphere if format actually changed
-      guard oldValue != newValue, let player = videoPlayer else { return }
+      guard oldValue != newValue, let player = videoPlayer, let material = videoMaterial else { return }
 
       print("🎬 Format changed from \(oldValue.description) to \(newValue.description)")
 
       // Recreate the video sphere for the new format
-      // This needs to be done in a Task to access RealityView content
       Task { @MainActor in
-        // Note: We can't directly access RealityView content here
-        // The sphere will be recreated on next render cycle
-        // For now, just restart playback
+        // Remove old sphere entity
+        sphereEntity?.removeFromParent()
+        sphereEntity = nil
+
+        print("🎬 Recreating sphere with new format: \(newValue.description)")
+
+        // Create new sphere with proper UV mapping for the new format
+        let surfaceData = createCurvedSurface(radius: sphereRadius, format: newValue)
+
+        var meshDescriptor = MeshDescriptor(name: "vr-video-surface")
+        meshDescriptor.positions = MeshBuffer(surfaceData.vertices)
+        meshDescriptor.textureCoordinates = MeshBuffer(surfaceData.uvs)
+        meshDescriptor.normals = MeshBuffer(surfaceData.normals)
+        meshDescriptor.primitives = .triangles(surfaceData.indices)
+
+        do {
+          let mesh = try MeshResource.generate(from: [meshDescriptor])
+          sphereEntity = ModelEntity(mesh: mesh, materials: [material])
+          sphereEntity?.position = [0, verticalOffset, 0]
+
+          if let newSphere = sphereEntity {
+            rootEntity.addChild(newSphere)
+            print("✅ Sphere recreated with new format: \(newValue.description)")
+          }
+        } catch {
+          print("❌ Failed to recreate sphere: \(error.localizedDescription)")
+          fallbackToSimpleSphere(videoMaterial: material)
+        }
+
+        // Restart playback if needed
         if player.timeControlStatus != .playing {
           print("🎬 Restarting playback after format change")
           player.play()
@@ -1122,6 +1157,76 @@ struct ImmersiveVideoScene: View {
           player.play()
         }
       }
+
+      // Wait to see if reload helped
+      try? await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds
+    }
+
+    // 4. If still stalled and haven't tried HLS yet, switch to HLS streaming
+    if player.timeControlStatus != .playing && !isUsingHLS && !hlsFallbackAttempted {
+      print("🔄 Recovery step 4: Switch to HLS streaming")
+
+      await MainActor.run {
+        hlsFallbackAttempted = true
+      }
+
+      // Get current scene
+      guard let currentScene = appModel.currentScene else {
+        print("❌ No current scene for HLS fallback")
+        await MainActor.run { isRecoveryInProgress = false }
+        return
+      }
+
+      // Try HLS streaming
+      do {
+        let api = StashAPI()
+        guard let hlsRequest = await api.getStreamRequest(forSceneID: currentScene.id, useHLS: true) else {
+          print("❌ Failed to get HLS stream request")
+          await MainActor.run { isRecoveryInProgress = false }
+          return
+        }
+
+        guard let hlsURL = hlsRequest.url else {
+          print("❌ Invalid HLS URL")
+          await MainActor.run { isRecoveryInProgress = false }
+          return
+        }
+
+        print("🔄 Switching to HLS URL: \(hlsURL.absoluteString)")
+
+        // Create new asset with HLS
+        let assetOptions: [String: Any] = [
+          "AVURLAssetHTTPHeaderFieldsKey": hlsRequest.allHTTPHeaderFields ?? [:],
+          "AVURLAssetAllowsExpensiveNetworkAccess": true,
+          "AVURLAssetAllowsConstrainedNetworkAccess": true,
+          "AVURLAssetUsesNSURLSessionKey": true,
+          "AVURLAssetPreferPreciseDurationAndTimingKey": true,
+        ]
+
+        let hlsAsset = AVURLAsset(url: hlsURL, options: assetOptions)
+        let hlsItem = AVPlayerItem(asset: hlsAsset)
+        hlsItem.preferredForwardBufferDuration = 30
+
+        // Replace with HLS item
+        await MainActor.run {
+          player.replaceCurrentItem(with: hlsItem)
+          isUsingHLS = true
+          debugMessage += "\nSwitched to HLS streaming"
+        }
+
+        // Wait for new item to be ready
+        try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
+
+        // Seek to previous position and play
+        await MainActor.run {
+          player.seek(to: currentTime) { _ in
+            player.play()
+            print("✅ HLS playback started")
+          }
+        }
+      } catch {
+        print("❌ HLS fallback failed: \(error.localizedDescription)")
+      }
     }
 
     // Reset recovery flag after waiting a bit
@@ -1181,6 +1286,8 @@ struct ImmersiveVideoScene: View {
 
     // Reset state flags
     isRecoveryInProgress = false
+    isUsingHLS = false
+    hlsFallbackAttempted = false
 
     // Stop all previews to ensure all audio is silenced
     GlobalVideoManager.shared.stopAllPreviews()
@@ -1233,25 +1340,51 @@ extension ImmersiveVideoScene {
   private func createSimplifiedVideoSphere(in content: RealityViewContent) {
     guard let videoMaterial = videoMaterial else { return }
 
-    print("🎥 Creating SIMPLE sphere test with RealityKit built-in mesh")
+    print("🎥 Creating VR video sphere with proper UV mapping for format: \(vrFormat.description)")
 
-    // SIMPLE TEST: Use RealityKit's built-in sphere
-    // Radius of 10 meters so user is inside looking out
-    let mesh = MeshResource.generateSphere(radius: 10.0)
+    // Create curved surface mesh with proper UV coordinates for the VR format
+    let surfaceData = createCurvedSurface(radius: sphereRadius, format: vrFormat)
 
-    // Create model entity with video material
+    // Create mesh descriptor from the surface data
+    var meshDescriptor = MeshDescriptor(name: "vr-video-surface")
+    meshDescriptor.positions = MeshBuffer(surfaceData.vertices)
+    meshDescriptor.textureCoordinates = MeshBuffer(surfaceData.uvs)
+    meshDescriptor.normals = MeshBuffer(surfaceData.normals)
+    meshDescriptor.primitives = .triangles(surfaceData.indices)
+
+    // Generate the mesh resource
+    do {
+      let mesh = try MeshResource.generate(from: [meshDescriptor])
+
+      // Create model entity with video material
+      sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
+
+      // Position at user location
+      sphereEntity?.position = [0, verticalOffset, 0]
+
+      // Add to root entity
+      if let sphereEntity = sphereEntity {
+        rootEntity.addChild(sphereEntity)
+        print("✅ Video sphere created with proper UV mapping for \(vrFormat.description)")
+      }
+    } catch {
+      print("❌ Failed to generate mesh: \(error.localizedDescription)")
+      // Fallback to simple sphere if mesh generation fails
+      fallbackToSimpleSphere(videoMaterial: videoMaterial)
+    }
+  }
+
+  // Fallback method if custom mesh creation fails
+  private func fallbackToSimpleSphere(videoMaterial: VideoMaterial) {
+    print("⚠️ Using fallback simple sphere")
+    let mesh = MeshResource.generateSphere(radius: sphereRadius)
     sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
-
-    // Flip scale to invert the sphere (makes normals face inward)
-    sphereEntity?.scale = [-1, 1, 1]  // Negative X flips the sphere inside-out
-
-    // Position at user location
+    sphereEntity?.scale = [-1, 1, 1]  // Invert for inside viewing
     sphereEntity?.position = [0, verticalOffset, 0]
 
-    // Add to root entity
     if let sphereEntity = sphereEntity {
       rootEntity.addChild(sphereEntity)
-      print("✅ Video sphere created with INVERTED built-in sphere (scale: -1, 1, 1)")
+      print("✅ Fallback sphere created")
     }
   }
 
