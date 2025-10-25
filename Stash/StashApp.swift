@@ -91,8 +91,10 @@ struct StashApp: App {
       ImmersiveVideoScene()
         .environmentObject(appModel)
         .environmentObject(navigationModel)
+        .persistentSystemOverlays(.hidden)  // Hide system UI overlays
     }
     .immersionStyle(selection: .constant(.full), in: .full)
+    .upperLimbVisibility(.hidden)  // Hide hands/controllers UI
 
     // Register the immersive space for XBVR VR video playback
     ImmersiveSpace(id: "XBVRPlayerSpace") {

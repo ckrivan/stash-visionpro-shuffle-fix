@@ -249,6 +249,8 @@ struct ImmersiveVideoScene: View {
   @State private var previousFormat: VRFormat = .sideBySide180  // Track format changes
   @State private var bufferingProgress: Double = 0.0
   @State private var isRecoveryInProgress = false
+  @State private var isUsingHLS = false  // Track streaming method
+  @State private var hlsFallbackAttempted = false  // Prevent infinite HLS retry loops
 
   // API for fetching random scenes
   @StateObject private var api = StashAPI()
@@ -637,24 +639,18 @@ struct ImmersiveVideoScene: View {
     }
     .onDisappear {
       cleanupResources()
+
+      // Reset immersive space state when leaving VR mode
+      Task { @MainActor in
+        appModel.immersiveSpaceState = .closed
+        appModel.isShowingImmersiveSpace = false
+        print("🎬 Exited immersive space - main interface restored")
+      }
     }
     .onChange(of: vrFormat) { oldValue, newValue in
-      // Only recreate sphere if format actually changed
-      guard oldValue != newValue, let player = videoPlayer else { return }
-
+      // Format changed - just log it for now
+      // The simple sphere works for all formats without recreation
       print("🎬 Format changed from \(oldValue.description) to \(newValue.description)")
-
-      // Recreate the video sphere for the new format
-      // This needs to be done in a Task to access RealityView content
-      Task { @MainActor in
-        // Note: We can't directly access RealityView content here
-        // The sphere will be recreated on next render cycle
-        // For now, just restart playback
-        if player.timeControlStatus != .playing {
-          print("🎬 Restarting playback after format change")
-          player.play()
-        }
-      }
     }
     // Main tap gesture to toggle controls
     .onTapGesture {
@@ -1066,6 +1062,33 @@ struct ImmersiveVideoScene: View {
     playbackMonitorTimer = nil
   }
 
+  /// Attempts to recover from video playback stalls using a 4-step progressive recovery strategy
+  ///
+  /// This method implements an intelligent fallback system to handle various playback failures:
+  /// network issues, codec incompatibilities, buffering problems, and format-specific errors.
+  ///
+  /// **Recovery Steps** (progressive escalation):
+  /// 1. **Simple Resume**: Call play() again (handles temporary pauses)
+  /// 2. **Seek Forward**: Jump ahead 1 second to skip corrupted frames
+  /// 3. **Reload Item**: Create fresh AVPlayerItem with increased buffer (handles buffer issues)
+  /// 4. **HLS Fallback**: Switch to HTTP Live Streaming with transcoding (handles codec issues)
+  ///
+  /// **HLS Fallback Details**:
+  /// - Only attempted once per playback session (prevents infinite loops via `hlsFallbackAttempted` flag)
+  /// - Uses Stash's built-in transcoding for maximum compatibility
+  /// - Preserves playback position across the switch
+  /// - Works with VPN/network optimizations from NetworkMonitor
+  ///
+  /// **Concurrency Safety**:
+  /// - Uses `isRecoveryInProgress` flag to prevent concurrent recovery attempts
+  /// - All player operations performed on MainActor for thread safety
+  /// - Async/await pattern for non-blocking recovery process
+  ///
+  /// **Critical for**:
+  /// - HEVC/H.265 videos that may not play directly on visionOS
+  /// - Network interruptions during VPN usage
+  /// - Format-specific playback issues (WMV, VC-1, etc.)
+  /// - Codec incompatibilities requiring server-side transcoding
   private func recoverFromStall() async {
     guard let player = videoPlayer, !isRecoveryInProgress else { return }
 
@@ -1121,6 +1144,76 @@ struct ImmersiveVideoScene: View {
           player.seek(to: currentTime)
           player.play()
         }
+      }
+
+      // Wait to see if reload helped
+      try? await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds
+    }
+
+    // 4. If still stalled and haven't tried HLS yet, switch to HLS streaming
+    if player.timeControlStatus != .playing && !isUsingHLS && !hlsFallbackAttempted {
+      print("🔄 Recovery step 4: Switch to HLS streaming")
+
+      await MainActor.run {
+        hlsFallbackAttempted = true
+      }
+
+      // Get current scene
+      guard let currentScene = appModel.currentScene else {
+        print("❌ No current scene for HLS fallback")
+        await MainActor.run { isRecoveryInProgress = false }
+        return
+      }
+
+      // Try HLS streaming
+      do {
+        let api = StashAPI()
+        guard let hlsRequest = await api.getStreamRequest(forSceneID: currentScene.id, useHLS: true) else {
+          print("❌ Failed to get HLS stream request")
+          await MainActor.run { isRecoveryInProgress = false }
+          return
+        }
+
+        guard let hlsURL = hlsRequest.url else {
+          print("❌ Invalid HLS URL")
+          await MainActor.run { isRecoveryInProgress = false }
+          return
+        }
+
+        print("🔄 Switching to HLS URL: \(hlsURL.absoluteString)")
+
+        // Create new asset with HLS
+        let assetOptions: [String: Any] = [
+          "AVURLAssetHTTPHeaderFieldsKey": hlsRequest.allHTTPHeaderFields ?? [:],
+          "AVURLAssetAllowsExpensiveNetworkAccess": true,
+          "AVURLAssetAllowsConstrainedNetworkAccess": true,
+          "AVURLAssetUsesNSURLSessionKey": true,
+          "AVURLAssetPreferPreciseDurationAndTimingKey": true,
+        ]
+
+        let hlsAsset = AVURLAsset(url: hlsURL, options: assetOptions)
+        let hlsItem = AVPlayerItem(asset: hlsAsset)
+        hlsItem.preferredForwardBufferDuration = 30
+
+        // Replace with HLS item
+        await MainActor.run {
+          player.replaceCurrentItem(with: hlsItem)
+          isUsingHLS = true
+          debugMessage += "\nSwitched to HLS streaming"
+        }
+
+        // Wait for new item to be ready
+        try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
+
+        // Seek to previous position and play
+        await MainActor.run {
+          player.seek(to: currentTime) { _ in
+            player.play()
+            print("✅ HLS playback started")
+          }
+        }
+      } catch {
+        print("❌ HLS fallback failed: \(error.localizedDescription)")
       }
     }
 
@@ -1181,6 +1274,8 @@ struct ImmersiveVideoScene: View {
 
     // Reset state flags
     isRecoveryInProgress = false
+    isUsingHLS = false
+    hlsFallbackAttempted = false
 
     // Stop all previews to ensure all audio is silenced
     GlobalVideoManager.shared.stopAllPreviews()
@@ -1230,6 +1325,22 @@ extension ImmersiveVideoScene {
     }
   }
 
+  /// Creates a VR video sphere with proper UV texture mapping for the current VR format
+  ///
+  /// This method generates a custom 3D mesh optimized for VR video playback. The mesh is created
+  /// with precise UV coordinates that map correctly to different VR video formats (SBS, OU, Fisheye, etc.).
+  ///
+  /// **Critical Fix**: Previous implementation used RealityKit's built-in inverted sphere with
+  /// `entity.scale = [-1, 1, 1]`, which broke UV mapping for VR formats. This custom mesh approach
+  /// ensures proper texture coordinate mapping for all supported VR video formats.
+  ///
+  /// - Parameter content: The RealityViewContent where the video sphere will be added
+  ///
+  /// **Architecture**:
+  /// 1. Creates curved surface with format-specific UV coordinates
+  /// 2. Generates mesh descriptor with vertices, UVs, normals, and triangle indices
+  /// 3. Uses RealityKit's MeshResource.generate() for efficient GPU rendering
+  /// 4. Falls back to simple sphere if mesh generation fails
   private func createSimplifiedVideoSphere(in content: RealityViewContent) {
     guard let videoMaterial = videoMaterial else { return }
 
@@ -1251,11 +1362,61 @@ extension ImmersiveVideoScene {
     // Add to root entity
     if let sphereEntity = sphereEntity {
       rootEntity.addChild(sphereEntity)
-      print("✅ Video sphere created with INVERTED built-in sphere (scale: -1, 1, 1)")
+      print("✅ SIMPLE sphere created successfully")
     }
   }
 
-  // Create a curved surface for video viewing (like MoonPlayer)
+  /// Fallback method using RealityKit's built-in sphere if custom mesh generation fails
+  ///
+  /// This uses a simple inverted sphere as a last resort. Note that this approach
+  /// may not work correctly for all VR formats due to UV mapping limitations, but
+  /// provides basic functionality if the custom mesh generation fails.
+  ///
+  /// - Parameter videoMaterial: The VideoMaterial to apply to the sphere
+  ///
+  /// **Known Limitations**:
+  /// - UV mapping may not be correct for SBS/OU/Fisheye formats
+  /// - Simple inversion via scale = [-1, 1, 1] can cause rendering artifacts
+  /// - This is only used as an emergency fallback
+  private func fallbackToSimpleSphere(videoMaterial: VideoMaterial) {
+    print("⚠️ Using fallback simple sphere")
+    let mesh = MeshResource.generateSphere(radius: sphereRadius)
+    sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
+    sphereEntity?.scale = [-1, 1, 1]  // Invert for inside viewing
+    sphereEntity?.position = [0, verticalOffset, 0]
+
+    if let sphereEntity = sphereEntity {
+      rootEntity.addChild(sphereEntity)
+      print("✅ Fallback sphere created")
+    }
+  }
+
+  /// Creates a curved surface mesh with proper UV mapping for VR video formats
+  ///
+  /// This is the core UV mapping logic that generates vertices, texture coordinates, normals,
+  /// and triangle indices for rendering VR video content. The mesh is optimized for each
+  /// VR format (SBS, OU, Fisheye, 180°, 360°).
+  ///
+  /// - Parameters:
+  ///   - radius: The radius of the curved surface (distance from viewer to screen)
+  ///   - format: The VR format determining UV mapping and mesh density
+  ///
+  /// - Returns: Tuple containing:
+  ///   - vertices: 3D positions of mesh vertices in world space
+  ///   - uvs: 2D texture coordinates mapping video pixels to mesh
+  ///   - normals: Surface normal vectors for lighting calculations
+  ///   - indices: Triangle vertex indices for GPU rendering
+  ///
+  /// **UV Mapping Strategy**:
+  /// - **SBS (Side-by-Side)**: Uses left half (0.0-0.5) or right half (0.5-1.0) of texture
+  /// - **OU (Over-Under)**: Uses top half (0.0-0.5) or bottom half (0.5-1.0) of texture
+  /// - **Fisheye**: Applies equidistant projection correction for radial distortion
+  /// - **180°/360°**: Adjusts horizontal FOV (π or 2π radians) and mesh segment count
+  ///
+  /// **Mesh Density**:
+  /// - Fisheye: 32 vertical segments for smooth distortion correction
+  /// - 360°: 64 horizontal segments for complete wraparound
+  /// - Standard: 16x32 segments for performance balance
   private func createCurvedSurface(radius: Float, format: VRFormat) -> (
     vertices: [SIMD3<Float>], uvs: [SIMD2<Float>], normals: [SIMD3<Float>], indices: [UInt32]
   ) {

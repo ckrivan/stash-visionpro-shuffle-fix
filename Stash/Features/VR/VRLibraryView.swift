@@ -383,7 +383,13 @@ struct VRLibraryView: View {
       Task {
         do {
           debugMessage = "Opening immersive video scene..."
-          // Open the pre-registered immersive space defined in App
+
+          // Update app model state to indicate we're entering immersive mode
+          await MainActor.run {
+            appModel.immersiveSpaceState = .inTransition
+            appModel.isShowingImmersiveSpace = true
+          }
+
           // First dismiss any existing immersive space
           try? await dismissImmersiveSpace()
 
@@ -392,15 +398,26 @@ struct VRLibraryView: View {
 
           // Open new immersive space
           try await openImmersiveSpace(id: "ImmersiveVideoSpace")
-          debugMessage = "Immersive space opened"
-          isImmersiveActive = true
+
+          // Update state when successfully opened
+          await MainActor.run {
+            appModel.immersiveSpaceState = .open
+            isImmersiveActive = true
+            debugMessage = "Immersive space opened - main interface hidden"
+          }
+
           print("🎬 Opened immersive space with scene ID: \(scene.id)")
         } catch {
-          debugMessage = "Failed to open immersive space: \(error.localizedDescription)"
+          // Reset state on failure
+          await MainActor.run {
+            appModel.immersiveSpaceState = .closed
+            appModel.isShowingImmersiveSpace = false
+            isImmersiveActive = false
+            debugMessage = "Failed to open immersive space: \(error.localizedDescription)"
+          }
           print("❌ Failed to open immersive space: \(error)")
         }
       }
-      isImmersiveActive = true
     #else
       // Fallback to 2D video sheet on non-visionOS
       showVRSheet = true
