@@ -1231,13 +1231,36 @@ extension ImmersiveVideoScene {
   }
 
   private func createSimplifiedVideoSphere(in content: RealityViewContent) {
-    guard let videoMaterial = videoMaterial else { return }
+    guard let videoMaterial = videoMaterial else {
+      print("⚠️ No video material available for sphere creation")
+      return
+    }
 
     print("🎥 Creating custom sphere with proper UV mapping for format: \(vrFormat)")
 
     // Use the existing createCurvedSurface function with proper UV mapping
     // This fixes the 360° video issue by correctly mapping only the left eye texture
     let (vertices, uvs, normals, indices) = createCurvedSurface(radius: sphereRadius, format: vrFormat)
+
+    // Validate mesh data before creating MeshDescriptor
+    guard !vertices.isEmpty, !uvs.isEmpty, !normals.isEmpty, !indices.isEmpty else {
+      print("❌ Invalid mesh data: empty arrays returned from createCurvedSurface")
+      // Fall back to simple sphere
+      let mesh = MeshResource.generateSphere(radius: sphereRadius)
+      sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
+      sphereEntity?.scale = [-1, 1, 1]
+      sphereEntity?.position = [0, verticalOffset, 0]
+      if let sphereEntity = sphereEntity {
+        rootEntity.addChild(sphereEntity)
+        print("⚠️ Fell back to simple sphere due to invalid mesh data")
+      }
+      return
+    }
+
+    guard vertices.count == uvs.count, vertices.count == normals.count else {
+      print("❌ Mesh data mismatch: vertices(\(vertices.count)) != uvs(\(uvs.count)) or normals(\(normals.count))")
+      return
+    }
 
     // Create mesh descriptor
     var meshDescriptor = MeshDescriptor()
@@ -1276,10 +1299,39 @@ extension ImmersiveVideoScene {
     }
   }
 
-  // Create a curved surface for video viewing (like MoonPlayer)
+  /// Creates a curved surface mesh for VR video playback with proper stereoscopic UV mapping.
+  ///
+  /// This function generates a cylindrical or spherical mesh surface with UV coordinates
+  /// that correctly map stereoscopic VR video formats (SBS, OU, Fisheye) to show only
+  /// the left eye view across the entire viewing sphere. This prevents the parallax
+  /// misalignment that occurs when both left and right eye views are mapped to different
+  /// hemispheres.
+  ///
+  /// - Parameters:
+  ///   - radius: The radius of the curved surface in meters. Typical range: 6.0-10.0
+  ///   - format: The VR video format determining UV mapping strategy and mesh density
+  ///
+  /// - Returns: A tuple containing:
+  ///   - vertices: 3D vertex positions in local space forming a curved surface
+  ///   - uvs: Texture coordinates [0,1] properly mapped for stereoscopic formats
+  ///   - normals: Surface normals pointing inward (required for inside viewing)
+  ///   - indices: Triangle indices in counter-clockwise winding order
+  ///
+  /// - Note:
+  ///   - **SBS formats**: Use left half of texture (U: 0.0-0.5) across full sphere
+  ///   - **OU formats**: Use top half of texture (V: 0.5-1.0) across full sphere
+  ///   - **Fisheye formats**: Apply equidistant projection correction for radial distortion
+  ///   - Mesh density adapts: 32v×64h for fisheye 360°, 16v×32h for standard 180°
+  ///   - Triangle count: 1,024-4,096 (well within visionOS 500K limit)
   private func createCurvedSurface(radius: Float, format: VRFormat) -> (
     vertices: [SIMD3<Float>], uvs: [SIMD2<Float>], normals: [SIMD3<Float>], indices: [UInt32]
   ) {
+    // Validate radius to prevent degenerate mesh
+    let validRadius = max(radius, 1.0)  // Ensure minimum radius of 1.0 meter
+    if radius != validRadius {
+      print("⚠️ Invalid radius \(radius), clamped to \(validRadius)")
+    }
+
     // Create a curved plane with more reliable UVs
     print("🔨 Creating curved surface for format: \(format)")
 
@@ -1304,10 +1356,10 @@ extension ImmersiveVideoScene {
         // Horizontal angle from -hFov/2 to +hFov/2
         let angle = (Float(hIdx) / Float(hSegments) - 0.5) * hFov
 
-        // Calculate position
-        let x = radius * sin(angle)
-        let y = radius * verticalPos
-        let z = -radius * cos(angle)
+        // Calculate position using validated radius
+        let x = validRadius * sin(angle)
+        let y = validRadius * verticalPos
+        let z = -validRadius * cos(angle)
 
         vertices.append([x, y, z])
 
@@ -1347,9 +1399,9 @@ extension ImmersiveVideoScene {
             texU = (fisheyeU + 0.5) * 0.5
             texV = 1.0 - (fisheyeV + 0.5)
           } else if format.isOverUnder {
-            // Top half for over-under
+            // Top half for over-under (left eye: V 0.5-1.0)
             texU = fisheyeU + 0.5
-            texV = (1.0 - (fisheyeV + 0.5)) * 0.5
+            texV = (1.0 - (fisheyeV + 0.5)) * 0.5 + 0.5
           } else {
             texU = fisheyeU + 0.5
             texV = 1.0 - (fisheyeV + 0.5)
@@ -1362,9 +1414,10 @@ extension ImmersiveVideoScene {
             texU = Float(hIdx) / Float(hSegments) * 0.5
             texV = 1.0 - Float(vIdx) / Float(vSegments)
           case .overUnder180, .overUnder360:
-            // Map to top half of the texture for OU format
+            // Map to top half of the texture for OU format (left eye)
+            // Standard: Top half (V: 0.5-1.0) = left eye, Bottom half (V: 0.0-0.5) = right eye
             texU = Float(hIdx) / Float(hSegments)
-            texV = (1.0 - Float(vIdx) / Float(vSegments)) * 0.5
+            texV = (1.0 - Float(vIdx) / Float(vSegments)) * 0.5 + 0.5
           case .mono:
             // Use full texture for mono
             texU = Float(hIdx) / Float(hSegments)
@@ -1375,7 +1428,10 @@ extension ImmersiveVideoScene {
           }
         }
 
-        uvs.append([texU, texV])
+        // Clamp UV coordinates to [0, 1] range to prevent rendering artifacts
+        let clampedU = min(max(texU, 0.0), 1.0)
+        let clampedV = min(max(texV, 0.0), 1.0)
+        uvs.append([clampedU, clampedV])
       }
     }
 
