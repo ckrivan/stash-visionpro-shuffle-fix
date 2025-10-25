@@ -1233,25 +1233,46 @@ extension ImmersiveVideoScene {
   private func createSimplifiedVideoSphere(in content: RealityViewContent) {
     guard let videoMaterial = videoMaterial else { return }
 
-    print("🎥 Creating SIMPLE sphere test with RealityKit built-in mesh")
+    print("🎥 Creating custom sphere with proper UV mapping for format: \(vrFormat)")
 
-    // SIMPLE TEST: Use RealityKit's built-in sphere
-    // Radius of 10 meters so user is inside looking out
-    let mesh = MeshResource.generateSphere(radius: 10.0)
+    // Use the existing createCurvedSurface function with proper UV mapping
+    // This fixes the 360° video issue by correctly mapping only the left eye texture
+    let (vertices, uvs, normals, indices) = createCurvedSurface(radius: sphereRadius, format: vrFormat)
 
-    // Create model entity with video material
-    sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
+    // Create mesh descriptor
+    var meshDescriptor = MeshDescriptor()
+    meshDescriptor.positions = MeshBuffer(vertices)
+    meshDescriptor.textureCoordinates = MeshBuffer(uvs)
+    meshDescriptor.normals = MeshBuffer(normals)
+    meshDescriptor.primitives = .triangles(indices)
 
-    // Flip scale to invert the sphere (makes normals face inward)
-    sphereEntity?.scale = [-1, 1, 1]  // Negative X flips the sphere inside-out
+    do {
+      // Generate mesh from descriptor
+      let mesh = try MeshResource.generate(from: [meshDescriptor])
 
-    // Position at user location
-    sphereEntity?.position = [0, verticalOffset, 0]
+      // Create model entity with video material
+      sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
 
-    // Add to root entity
-    if let sphereEntity = sphereEntity {
-      rootEntity.addChild(sphereEntity)
-      print("✅ Video sphere created with INVERTED built-in sphere (scale: -1, 1, 1)")
+      // Position at user location
+      sphereEntity?.position = [0, verticalOffset, 0]
+
+      // Add to root entity
+      if let sphereEntity = sphereEntity {
+        rootEntity.addChild(sphereEntity)
+        print("✅ Video sphere created with custom UV mapping for \(vrFormat.description)")
+        print("   Vertices: \(vertices.count), Indices: \(indices.count)")
+      }
+    } catch {
+      print("❌ Error generating mesh: \(error)")
+      // Fallback to simplified sphere if mesh generation fails
+      let mesh = MeshResource.generateSphere(radius: sphereRadius)
+      sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
+      sphereEntity?.scale = [-1, 1, 1]
+      sphereEntity?.position = [0, verticalOffset, 0]
+      if let sphereEntity = sphereEntity {
+        rootEntity.addChild(sphereEntity)
+        print("⚠️ Fell back to simple sphere due to error")
+      }
     }
   }
 
