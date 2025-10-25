@@ -648,48 +648,9 @@ struct ImmersiveVideoScene: View {
       }
     }
     .onChange(of: vrFormat) { oldValue, newValue in
-      // Only recreate sphere if format actually changed
-      guard oldValue != newValue, let player = videoPlayer, let material = videoMaterial else { return }
-
+      // Format changed - just log it for now
+      // The simple sphere works for all formats without recreation
       print("🎬 Format changed from \(oldValue.description) to \(newValue.description)")
-
-      // Recreate the video sphere for the new format
-      Task { @MainActor in
-        // Remove old sphere entity
-        sphereEntity?.removeFromParent()
-        sphereEntity = nil
-
-        print("🎬 Recreating sphere with new format: \(newValue.description)")
-
-        // Create new sphere with proper UV mapping for the new format
-        let surfaceData = createCurvedSurface(radius: sphereRadius, format: newValue)
-
-        var meshDescriptor = MeshDescriptor(name: "vr-video-surface")
-        meshDescriptor.positions = MeshBuffer(surfaceData.vertices)
-        meshDescriptor.textureCoordinates = MeshBuffer(surfaceData.uvs)
-        meshDescriptor.normals = MeshBuffer(surfaceData.normals)
-        meshDescriptor.primitives = .triangles(surfaceData.indices)
-
-        do {
-          let mesh = try MeshResource.generate(from: [meshDescriptor])
-          sphereEntity = ModelEntity(mesh: mesh, materials: [material])
-          sphereEntity?.position = [0, verticalOffset, 0]
-
-          if let newSphere = sphereEntity {
-            rootEntity.addChild(newSphere)
-            print("✅ Sphere recreated with new format: \(newValue.description)")
-          }
-        } catch {
-          print("❌ Failed to recreate sphere: \(error.localizedDescription)")
-          fallbackToSimpleSphere(videoMaterial: material)
-        }
-
-        // Restart playback if needed
-        if player.timeControlStatus != .playing {
-          print("🎬 Restarting playback after format change")
-          player.play()
-        }
-      }
     }
     // Main tap gesture to toggle controls
     .onTapGesture {
@@ -1383,37 +1344,25 @@ extension ImmersiveVideoScene {
   private func createSimplifiedVideoSphere(in content: RealityViewContent) {
     guard let videoMaterial = videoMaterial else { return }
 
-    print("🎥 Creating VR video sphere with proper UV mapping for format: \(vrFormat.description)")
+    print("🎥 Creating SIMPLE sphere test with RealityKit built-in mesh")
 
-    // Create curved surface mesh with proper UV coordinates for the VR format
-    let surfaceData = createCurvedSurface(radius: sphereRadius, format: vrFormat)
+    // SIMPLE TEST: Use RealityKit's built-in sphere
+    // Radius of 10 meters so user is inside looking out
+    let mesh = MeshResource.generateSphere(radius: 10.0)
 
-    // Create mesh descriptor from the surface data
-    var meshDescriptor = MeshDescriptor(name: "vr-video-surface")
-    meshDescriptor.positions = MeshBuffer(surfaceData.vertices)
-    meshDescriptor.textureCoordinates = MeshBuffer(surfaceData.uvs)
-    meshDescriptor.normals = MeshBuffer(surfaceData.normals)
-    meshDescriptor.primitives = .triangles(surfaceData.indices)
+    // Create model entity with video material
+    sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
 
-    // Generate the mesh resource
-    do {
-      let mesh = try MeshResource.generate(from: [meshDescriptor])
+    // Flip scale to invert the sphere (makes normals face inward)
+    sphereEntity?.scale = [-1, 1, 1]  // Negative X flips the sphere inside-out
 
-      // Create model entity with video material
-      sphereEntity = ModelEntity(mesh: mesh, materials: [videoMaterial])
+    // Position at user location
+    sphereEntity?.position = [0, verticalOffset, 0]
 
-      // Position at user location
-      sphereEntity?.position = [0, verticalOffset, 0]
-
-      // Add to root entity
-      if let sphereEntity = sphereEntity {
-        rootEntity.addChild(sphereEntity)
-        print("✅ Video sphere created with proper UV mapping for \(vrFormat.description)")
-      }
-    } catch {
-      print("❌ Failed to generate mesh: \(error.localizedDescription)")
-      // Fallback to simple sphere if mesh generation fails
-      fallbackToSimpleSphere(videoMaterial: videoMaterial)
+    // Add to root entity
+    if let sphereEntity = sphereEntity {
+      rootEntity.addChild(sphereEntity)
+      print("✅ SIMPLE sphere created successfully")
     }
   }
 
