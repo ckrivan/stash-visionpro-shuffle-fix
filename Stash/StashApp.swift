@@ -105,5 +105,17 @@ struct StashApp: App {
     }
     .immersionStyle(selection: .constant(.full), in: .mixed, .progressive, .full)
     .upperLimbVisibility(.hidden)
+
+    // Register the NEW GVR-style Metal-based VR player
+    // This is the Moon Player-inspired implementation with proper Metal shaders
+    // Use this instead of ImmersiveVideoSpace for better VR projection
+    ImmersiveSpace(id: "GVRPlayerSpace") {
+      GVRStylePlayerView()
+        .environmentObject(appModel)
+        .environmentObject(navigationModel)
+        .persistentSystemOverlays(.hidden)
+    }
+    .immersionStyle(selection: .constant(.full), in: .full)
+    .upperLimbVisibility(.hidden)
   }
 }

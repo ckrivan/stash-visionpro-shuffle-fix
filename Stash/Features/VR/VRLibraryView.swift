@@ -397,13 +397,15 @@ struct VRLibraryView: View {
           try await Task.sleep(nanoseconds: 300_000_000)  // 0.3 seconds
 
           // Open new immersive space
-          try await openImmersiveSpace(id: "ImmersiveVideoSpace")
+          // UPDATED: Using new GVR-style Metal-based player (Moon Player approach)
+          // To use old RealityKit player, change to: "ImmersiveVideoSpace"
+          try await openImmersiveSpace(id: "GVRPlayerSpace")
 
           // Update state when successfully opened
           await MainActor.run {
             appModel.immersiveSpaceState = .open
             isImmersiveActive = true
-            debugMessage = "Immersive space opened - main interface hidden"
+            debugMessage = "GVR Player opened - Metal rendering active"
           }
 
           print("🎬 Opened immersive space with scene ID: \(scene.id)")
