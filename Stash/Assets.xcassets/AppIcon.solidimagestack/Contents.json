@@ -1,0 +1,13 @@
+{
+  "properties" : {
+    "background-color" : "rgba(0,0,0,0)",
+    "frame-size" : {
+      "width" : 512,
+      "height" : 512
+    }
+  },
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -1,0 +1,109 @@
+# Setting Up Task Master for Stash VisionPro Project
+
+I've created a comprehensive PRD (Product Requirements Document) for your Stash VisionPro application based on my analysis of your codebase. To convert this PRD into organized, actionable tasks, follow these steps:
+
+## Step 1: Install Task Master
+
+```bash
+# Install Task Master globally
+npm install -g task-master-ai
+
+# OR install it locally in your project
+npm install task-master-ai
+```
+
+## Step 2: Set Up Environment Variables
+
+Create a `.env` file in your project root with the following configuration:
+
+```
+# Required
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Optional but recommended settings
+MODEL=claude-3-7-sonnet-20250219
+MAX_TOKENS=64000
+TEMPERATURE=0.2
+DEFAULT_SUBTASKS=5
+DEFAULT_PRIORITY=medium
+
+# Optional Perplexity integration for research capabilities
+# PERPLEXITY_API_KEY=your_perplexity_api_key
+# PERPLEXITY_MODEL=sonar-pro
+```
+
+You must replace `your_anthropic_api_key_here` with a valid Anthropic API key to use Task Master.
+
+## Step 3: Initialize Task Master Project
+
+```bash
+# If installed globally
+task-master init
+
+# If installed locally
+npx task-master-ai init
+```
+
+## Step 4: Parse the PRD to Generate Tasks
+
+```bash
+# If installed globally
+task-master parse-prd scripts/prd.txt
+
+# If installed locally
+npx task-master-ai parse-prd scripts/prd.txt
+```
+
+## Step 5: Use Task Master Commands
+
+Once your tasks are generated, you can use these common commands:
+
+```bash
+# List all tasks
+task-master list
+
+# Show the next task to work on
+task-master next
+
+# See details for a specific task
+task-master show <task-id>
+
+# Break down a task into subtasks
+task-master expand --id=<task-id>
+
+# Mark a task as complete
+task-master set-status --id=<task-id> --status=done
+```
+
+## Alternative: Use MCP in Cursor
+
+If you're using Cursor IDE, set up the MCP config for seamless AI integration:
+
+1. Add to Cursor settings:
+```json
+{
+    "mcpServers": {
+        "taskmaster-ai": {
+            "command": "npx",
+            "args": ["-y", "--package=task-master-ai", "task-master-ai"],
+            "env": {
+                "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE",
+                "MODEL": "claude-3-7-sonnet-20250219",
+                "MAX_TOKENS": "64000",
+                "TEMPERATURE": "0.2",
+                "DEFAULT_SUBTASKS": "5",
+                "DEFAULT_PRIORITY": "medium"
+            }
+        }
+    }
+}
+```
+
+2. Enable MCP in Cursor
+3. Ask the AI to manage tasks directly in your editor
+
+## What's Next
+
+The PRD has been saved to `scripts/prd.txt`. After generating tasks, Task Master will create a structured `tasks` directory with detailed task files and a `tasks.json` file to track progress.
+
+Follow the development phases outlined in the PRD, starting with core functionality (server connection, basic browsing) before moving to immersive experiences and advanced features. 

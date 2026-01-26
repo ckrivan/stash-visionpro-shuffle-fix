@@ -1,0 +1,123 @@
+# Stash VisionPro - Product Requirements Document
+
+## Overview
+Stash VisionPro is a native Apple Vision Pro application that provides immersive viewing and management of multimedia content from a Stash server. It leverages the unique capabilities of the Vision Pro platform to deliver intuitive navigation, immersive viewing experiences, and powerful content organization.
+
+## Target Users
+- Adult content enthusiasts looking for immersive viewing experiences
+- Existing Stash server users seeking Vision Pro integration
+- Users who desire a premium, private viewing experience with advanced organization features
+
+## Core Features
+
+### 1. Seamless Server Integration
+- Connect to existing Stash servers through GraphQL API
+- Support for authentication via API keys
+- Automatic synchronization of content, performers, tags, and metadata
+- Direct and HLS streaming support for various media formats
+
+### 2. Immersive Video Experience
+- Full immersive space for VR/180°/360° content playback
+- High-quality video rendering optimized for Vision Pro
+- Support for interactive content (funscript integration)
+- Picture-in-picture and floating window modes
+
+### 3. Comprehensive Content Browser
+- Browse scenes with detailed metadata and thumbnails
+- Filter and sort content by performers, tags, studios, and other attributes
+- Advanced search capabilities with fuzzy matching
+- Favorites system and watch history tracking
+
+### 4. Performer Management
+- Detailed performer profiles with images and metadata
+- Browse performer scenes with filtering options
+- Quick access to performer statistics and information
+- Favorite performers for easy access
+
+### 5. Content Organization
+- Tag-based organization system
+- Custom filters and saved searches
+- Recently viewed and recommended content
+- Rating system for personal content curation
+
+### 6. Playback Controls
+- Advanced video player with standard controls (play/pause, seek, volume)
+- Random scene jumping functionality
+- Shuffle play mode for collections and filtered content
+- Marker navigation within scenes
+- Support for various video resolutions and formats
+
+### 7. Privacy and Security
+- Secure API communication
+- Local-only authentication storage
+- Privacy mode to hide sensitive content quickly
+- No cloud storage of content or metadata
+
+## Technical Requirements
+
+### Platform Requirements
+- Apple Vision Pro with visionOS 1.0 or later
+- Minimum 256MB storage for app installation
+- Internet connection for server communication
+- Stash server v0.15 or higher
+
+### Backend Integration
+- GraphQL API integration with Stash server
+- WebSocket support for real-time updates
+- Support for direct streaming and HLS protocols
+- Caching mechanism for improved performance
+
+### Performance Requirements
+- Smooth 90+ FPS playback in immersive modes
+- Fast content loading with pagination support
+- Optimized network usage with intelligent caching
+- Battery-efficient operation during extended viewing
+
+### UI/UX Requirements
+- Native visionOS look and feel
+- Hand gesture and eye tracking controls
+- Intuitive spatial UI navigation
+- Support for spatial audio
+- Dynamic layouts for different viewing contexts
+
+## Future Enhancements
+- Multi-server support
+- Offline mode with content download
+- AI-powered content recommendations
+- Custom playlists creation and sharing
+- Advanced filtering with saved filter presets
+- Integration with external devices/accessories
+- Content editing and organization tools directly within the app
+
+## Development Phases
+
+### Phase 1: Core Functionality
+- Server connection and authentication
+- Basic content browsing and filtering
+- Standard video playback
+- Performer and tag browsing
+
+### Phase 2: Immersive Experience
+- VR playback in immersive space
+- Enhanced video controls
+- Interactive content support
+- Spatial UI improvements
+
+### Phase 3: Advanced Features
+- Random and shuffle playback modes
+- Marker navigation
+- Enhanced filtering system
+- Improved caching and performance
+
+### Phase 4: Refinements
+- UI polish and animations
+- Additional metadata display options
+- Settings and customization
+- Analytics and feedback mechanisms
+
+## Success Metrics
+- User engagement (time spent in app)
+- Content discovery metrics (number of different scenes viewed)
+- Playback completion rates
+- Feature utilization statistics
+- User satisfaction with immersive experiences 

@@ -1,0 +1,259 @@
+# StashVision Pro App Requirements
+
+## Overview
+Create a native visionOS (Apple Vision Pro) client for Stash, a self-hosted media server and organizer. The app should provide an immersive and intuitive way to browse, search, and play media content from a Stash server, with special optimization for the Vision Pro's unique capabilities.
+
+## Stash Server Resources
+- **GitHub Repository**: https://github.com/stashapp/stash - Main Stash server project with documentation
+- **API Documentation**: https://github.com/stashapp/stash/tree/master/docs/graphql - GraphQL API documentation
+- **GraphQL Schema**: https://github.com/stashapp/stash/blob/master/graphql/schema/schema.graphql - Full schema definition
+- **Demo Server**: https://nightly.c18.stashapp.cc/ - Demo server for testing (requires login)
+- **Stash Discord**: https://discord.com/invite/2TsNFKt - For community support and development questions
+- **API Explorer**: https://raw.githack.com/stashapp/stash/master/docs/playground/index.html - Interactive GraphQL API explorer
+
+## Core Technology Stack
+- Swift and SwiftUI for the front-end
+- visionOS SDK and RealityKit for spatial experiences
+- AVKit for media playback
+- Combine for reactive programming
+- URLSession for networking
+
+## App Architecture
+- MVVM (Model-View-ViewModel) architecture
+- Features-oriented file structure
+- Modular design with separate components for:
+  - Networking
+  - Media playback
+  - UI components
+  - Data models
+  - Utilities
+
+## Server Connection & Authentication
+- Allow users to connect to a Stash server using:
+  - Server URL (e.g., http://192.168.86.100:9999)
+  - API key for authentication
+- Remember connection details between app launches
+- Show a clear connection status indicator
+- Allow reconnection if server connection is lost
+
+## Media Library Browsing
+- Create a dashboard view showing recent scenes/videos
+- Implement grid and list views for browsing content
+- Support for sorting and filtering content
+- Display video thumbnails, duration, and metadata
+- Show video details on selection
+
+## Performers Management
+- Browse performers with thumbnail images
+- View performer details including their scenes
+- Support performer filtering and searching
+- Include performer shuffle functionality for random scene selection
+
+## Tags System
+- Browse content by tags
+- Filter scenes by multiple tags
+- Tag editor for managing content organization
+- Tagged scenes view for content with specific tags
+
+## Video Player
+- Custom video player optimized for Vision Pro
+- Support for both HLS (HTTP Live Streaming) and direct streaming modes
+- Toggle button to switch between streaming modes:
+  - Direct mode (faster, uses less bandwidth) with green globe icon
+  - HLS mode (smoother, better for jittery videos) with blue globe icon
+- Smart fallback system that automatically tries HLS mode if direct playback fails
+- Remember streaming mode preferences
+- Custom controls overlay with:
+  - Play/pause button
+  - Shuffle/random buttons (completely random or within current performer)
+  - Progress bar with thumbnails preview
+  - Close button
+  - Minimal, non-intrusive feedback notifications
+
+## Immersive Experience
+- Support for both window mode and immersive space
+- Toggle button to switch between window and immersive modes
+- Spatial audio support for immersive viewing
+- VR content detection and special handling
+- Custom environments for immersive viewing
+
+## Custom Icons and UI Elements
+- Custom iconography for player controls:
+  - Close button
+  - Shuffle button
+  - Performer shuffle button
+  - HLS/Direct toggle with globe icon
+- Subtle, non-intrusive notification system
+- Clean, minimal interface designed for Vision Pro
+
+## Advanced Video Features
+- Video preview on hover/focus
+- Thumbnail extraction and display
+- Smart codec detection (H.264, HEVC/H.265)
+- Special handling for problematic video formats
+- Automatic position saving and restoration
+
+## Performance Requirements
+- Smooth 60fps UI throughout the app
+- Efficient video loading and playback
+- Minimize memory usage for media assets
+- Support background tasks for media preparation
+- Handle large media libraries efficiently
+
+## Networking Features
+- WebSocket support for real-time updates
+- Efficient media streaming with bandwidth considerations
+- Caching of thumbnails and metadata
+- Resume interrupted downloads
+- Background fetching of content
+
+## Special Features
+- Play random videos (from beginning or random position)
+- Play videos from specific performers
+- Remember playback position for videos
+- Handle content with different resolutions and aspect ratios
+- Support for VTT thumbnails for scrubbing previews
+- Support marking content with tags
+
+## Stash API Implementation Details
+The app must interact with several Stash API endpoints:
+
+### GraphQL Endpoints
+- `FindScene(id: ID!)` - Get scene details by ID
+- `FindScenes(filter: SceneFilterType, scene_filter: SceneFilterType)` - Query scenes with filters
+- `FindPerformers(filter: PerformerFilterType)` - Query performers with filters 
+- `FindTags(filter: TagFilterType)` - Query tags with filters
+
+### Direct Media URLs
+- Scene Direct Stream: `{serverURL}/scene/{id}/stream?apikey={key}`
+- Scene HLS Stream: `{serverURL}/scene/{id}/stream.m3u8?apikey={key}&resolution={res}`
+- Scene Screenshot: `{serverURL}/scene/{id}/screenshot?t={timestamp}&apikey={key}`
+- Scene Preview: `{serverURL}/scene/{id}/preview?apikey={key}`
+- VTT Thumbnails: `{serverURL}/scene/{fingerprint}_thumbs.vtt?apikey={key}`
+- Sprite Sheet: `{serverURL}/scene/{fingerprint}_sprite.jpg?apikey={key}`
+
+### Authentication
+- API Key authentication via:
+  - HTTP header: `ApiKey: {key}`
+  - URL parameter: `?apikey={key}`
+  - Authorization header: `Authorization: Bearer {key}`
+
+## Technical Implementation Details
+1. Video Player Component:
+   - Use AVPlayer with custom UI controls
+   - Support both AVPlayer direct streaming and HLS
+   - Implement custom AVPlayerLayer with proper cleanup
+   - Handle codec-specific optimizations
+
+2. HLS/Direct Toggle:
+   - Create custom toggle mechanism between streaming modes 
+   - Preserve playback position when switching modes
+   - Add problematic videos to tracking list for better future handling
+   - Use UserDefaults to persist mode preferences
+
+3. Networking Layer:
+   - GraphQL API for communicating with Stash server
+   - Paginated requests for efficient data loading
+   - Proper error handling and retry logic
+   - Websocket connection for real-time updates
+
+4. UI Architecture:
+   - Main window view with sidebar navigation
+   - Detail views for different content types
+   - Custom player overlay with minimal controls
+   - Non-intrusive notification system with condensed messages
+
+5. Data Management:
+   - Core models: Scenes, Performers, Tags, Studios
+   - Efficient media caching
+   - Search index for quick content location
+   - Playback position tracking across app sessions
+
+## Stash Data Models
+The app needs to implement Swift models that match Stash's data structure:
+
+### Scene Model (Key Fields)
+```swift
+struct StashScene: Identifiable, Decodable {
+    let id: String
+    let title: String
+    let details: String?
+    let url: String?
+    let date: String?
+    let rating100: Int?
+    let performers: [StashPerformer]?
+    let tags: [StashTag]?
+    let studio: StashStudio?
+    let files: [StashFile]?
+    let paths: ScenePaths?
+    let created_at: String?
+    let updated_at: String?
+}
+
+struct StashFile: Decodable {
+    let id: String?
+    let path: String?
+    let size: Int?
+    let duration: Double?
+    let video_codec: String?
+    let audio_codec: String?
+    let width: Int?
+    let height: Int?
+    let framerate: Double?
+    let bitrate: Int?
+}
+
+struct ScenePaths: Decodable {
+    let screenshot: String?
+    let preview: String?
+    let stream: String?
+    let webp: String?
+    let vtt: String?
+    let sprite: String?
+    let funscript: String?
+    let interactive_heatmap: String?
+}
+```
+
+### Performer Model
+```swift
+struct StashPerformer: Identifiable, Decodable {
+    let id: String
+    let name: String
+    let gender: String?
+    let url: String?
+    let twitter: String?
+    let instagram: String?
+    let image_path: String?
+    let scene_count: Int?
+    let tags: [StashTag]?
+}
+```
+
+### Important Considerations
+- Scene "fingerprints" (like oshash, MD5, etc.) are needed for VTT/sprite files
+- Stash supports multiple video file formats, some requiring HLS for smooth playback
+- HEVC/H.265 codec videos often need special handling with HLS streaming
+- Resolution options for HLS: "240p", "480p", "720p", "1080p", "4k", "original"
+- VR content detection via tags containing "vr", "180", or "360"
+
+## Icon Specifications
+- Create custom player control icons:
+  - close.png - Close button for various dialogs and player
+  - shuffle.png - Random video selection 
+  - performershuffle.png - Random video from current performer
+  - globe.png - For HLS/Direct streaming mode toggle (color changes based on mode)
+- All icons should be consistently sized at 42x42 pixels in the player
+- Use color coding (green/blue) to indicate streaming modes
+
+## Accessibility Requirements
+- Support for VoiceOver
+- Dynamic Type compatibility 
+- Proper contrast ratios
+- Haptic feedback for important interactions
+
+## Documentation
+- Code comments explaining complex functionality
+- Proper API documentation
+- User guide for key features
+- Setup instructions for server connection
